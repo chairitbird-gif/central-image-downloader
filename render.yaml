@@ -4,7 +4,13 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --worker-class gthread --workers 2 --threads 4 --bind 0.0.0.0:$PORT --timeout 120
+    # Sessions and edited image bytes are held in process memory, so this must
+    # stay at one worker unless the session store moves to shared storage.
+    startCommand: gunicorn app:app --worker-class gthread --workers 1 --threads 8 --bind 0.0.0.0:$PORT --timeout 180
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.11.11
+      - key: REMBG_MODEL
+        value: u2netp
+      - key: MAX_SKUS_PER_JOB
+        value: 80

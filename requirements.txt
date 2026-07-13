@@ -2,3 +2,6 @@ flask>=3.0
 requests>=2.31
 Pillow>=10.0
 gunicorn>=21.0
+curl-cffi>=0.7
+rembg>=2.0          # Dicut AI (ลบพื้นหลัง)
+onnxruntime>=1.16   # engine ของ rembg
