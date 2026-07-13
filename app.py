@@ -6,7 +6,7 @@ Requirements: pip install flask requests Pillow
 Run:          python app.py
 Open:         http://localhost:5000
 """
-import io, re, time, json, zipfile, threading, os, sys, functools, platform, subprocess
+import io, re, time, json, zipfile, threading, os, sys, functools, platform, subprocess, tempfile
 from pathlib import Path
 from urllib.parse import unquote, quote_plus
 from queue import Queue, Empty
@@ -17,7 +17,7 @@ from flask import Flask, Response, request, send_file, stream_with_context, abor
 from PIL import Image
 
 IS_MAC = platform.system() == 'Darwin'
-_CURL_COOKIE_FILE = '/tmp/central_dl_cookies.txt'
+_CURL_COOKIE_FILE = os.path.join(tempfile.gettempdir(), 'central_dl_cookies.txt')
 _curl_warmed = False
 
 # เมื่อ pack เป็น .exe (frozen): บอก rembg ให้หาโมเดล AI จากในตัว .exe ที่ฝังไว้
@@ -82,17 +82,19 @@ GOOGLE_HEADERS = {
 # ── Cloudflare-bypass HTTP helpers ────────────────────────────────────────────
 
 def _curl_warmup():
-    cmd = ['curl', '-sL', '--max-time', '10', '--compressed',
+    cmd = ['curl', '-sL', '--max-time', '10',
            '-c', _CURL_COOKIE_FILE, '-b', _CURL_COOKIE_FILE,
            '-H', f'User-Agent: {HEADERS["User-Agent"]}',
+           '-H', 'Accept-Encoding: identity',
            '-H', 'Accept-Language: th-TH,th;q=0.9,en;q=0.8',
            'https://www.central.co.th/']
     subprocess.run(cmd, capture_output=True, timeout=15)
 
 def _curl_get_html(url):
-    cmd = ['curl', '-sL', '--max-time', '15', '--compressed',
+    cmd = ['curl', '-sL', '--max-time', '15',
            '-c', _CURL_COOKIE_FILE, '-b', _CURL_COOKIE_FILE,
            '-H', f'User-Agent: {HEADERS["User-Agent"]}',
+           '-H', 'Accept-Encoding: identity',
            '-H', 'Accept-Language: th-TH,th;q=0.9,en;q=0.8',
            '-w', '\n__STATUS__%{http_code}',
            url]
@@ -105,6 +107,26 @@ def _curl_get_html(url):
             raise requests.exceptions.HTTPError(f'{code}')
         return body
     return output
+
+def _curl_get_bytes(url, referer='https://www.central.co.th/'):
+    """Binary equivalent of _curl_get_html for Central's image CDN."""
+    marker = b'\n__STATUS__'
+    cmd = ['curl', '-sL', '--max-time', '20',
+           '-c', _CURL_COOKIE_FILE, '-b', _CURL_COOKIE_FILE,
+           '-H', f'User-Agent: {HEADERS["User-Agent"]}',
+           '-H', 'Accept-Encoding: identity',
+           '-H', 'Accept: image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+           '-H', f'Referer: {referer}',
+           '-w', '\n__STATUS__%{http_code}', url]
+    result = subprocess.run(cmd, capture_output=True, timeout=25)
+    if marker not in result.stdout:
+        raise requests.exceptions.HTTPError('curl image request failed')
+    body, code_bytes = result.stdout.rsplit(marker, 1)
+    code_text = code_bytes.decode('ascii', 'replace').strip()
+    code = int(code_text) if code_text.isdigit() else 0
+    if code != 200:
+        raise requests.exceptions.HTTPError(f'image HTTP {code}')
+    return body
 
 # Shared session — reuse TCP/TLS connection เดิม (เร็วกว่าเปิดใหม่ทุก request ~0.3-0.5 วิ)
 _http = requests.Session()
@@ -252,12 +274,23 @@ def fetch_image_bytes(image_url, referer='https://www.central.co.th/', fmt='jpg'
     """โหลดรูป + แปลงฟอร์แมต — fmt='jpg' (q95, ไฟล์เล็ก) หรือ 'png' (lossless, คมสุด)"""
     image_headers = {**HEADERS, 'Referer': referer,
                      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'}
+    global _curl_warmed
     r = _http.get(image_url, headers=image_headers, timeout=15)
+    content = None
     if r.status_code in (403, 429, 503) and HAS_CURL_CFFI:
-        r = cffi_requests.get(image_url, headers=image_headers,
-                              impersonate='chrome124', timeout=15)
-    r.raise_for_status()
-    img = Image.open(io.BytesIO(r.content)).convert('RGB')
+        r2 = cffi_requests.get(image_url, headers=image_headers,
+                               impersonate='chrome124', timeout=15)
+        if r2.status_code == 200:
+            content = r2.content
+    if content is None and r.status_code in (403, 429, 503):
+        if not _curl_warmed:
+            _curl_warmup()
+            _curl_warmed = True
+        content = _curl_get_bytes(image_url, referer=referer)
+    if content is None:
+        r.raise_for_status()
+        content = r.content
+    img = Image.open(io.BytesIO(content)).convert('RGB')
     w, h = img.size
     buf = io.BytesIO()
     if fmt == 'png':
@@ -1766,7 +1799,7 @@ HTML_PAGE = '''<!DOCTYPE html>
           <button class="btn-secondary" id="btn-dicut" onclick="dicutAll('white')" style="background:var(--info);color:#fff">✂️ Dicut</button>
           <div class="desc">ลบพื้นหลังขาว (เร็ว) เหมาะกับรูปพื้นขาวสะอาด</div>
         </div>
-        <div class="dicut-col">
+        <div class="dicut-col" id="dicut-ai-col">
           <button class="btn-secondary" id="btn-dicut-ai" onclick="dicutAll('ai')" style="background:var(--ai);color:#fff">🤖 Dicut AI</button>
           <div class="desc">ลบพื้นหลังด้วย AI (ช้ากว่า) คมชัด ตัดเฉพาะวัตถุจริง</div>
         </div>
@@ -1788,6 +1821,9 @@ HTML_PAGE = '''<!DOCTYPE html>
 <script>
 const MAX_SKUS=Number('__MAX_SKUS__');
 let sessionId=null, total=0, current=0, autoSave=false, isLocal=false;
+fetch('/has-ai').then(r=>r.json()).then(d=>{
+  if(!d.available) document.getElementById('dicut-ai-col').style.display='none';
+}).catch(()=>{ document.getElementById('dicut-ai-col').style.display='none'; });
 let savedSkus=new Set(), loadedSkus=[], notFoundSkus=[], lastFolder='', startTime=0;
 let abortCtrl=null, dicutRunning=false;
 

@@ -10,7 +10,5 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.11
-      - key: REMBG_MODEL
-        value: u2netp
       - key: MAX_SKUS_PER_JOB
         value: 80
