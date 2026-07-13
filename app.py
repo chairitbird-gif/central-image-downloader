@@ -8,7 +8,7 @@ Open:         http://localhost:5000
 """
 import io, re, time, json, zipfile, threading, os, sys, functools, platform, subprocess, tempfile
 from pathlib import Path
-from urllib.parse import unquote, quote_plus
+from urllib.parse import unquote, quote, quote_plus, urlparse
 from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -78,6 +78,15 @@ GOOGLE_HEADERS = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Referer': 'https://www.google.com/',
 }
+
+# Central's current storefront (1.46.1, checked 2026-07-13) searches this
+# Algolia index. Its public search-only record contains the exact CDSPIM path,
+# so hosted deployments do not need to request WAF-protected www.central.co.th.
+ALGOLIA_APP_ID = os.environ.get('CENTRAL_ALGOLIA_APP_ID', 'JL22XXDCS9')
+ALGOLIA_SEARCH_KEY = os.environ.get(
+    'CENTRAL_ALGOLIA_SEARCH_KEY', '219108856fc945a087d091aebc7eebbb')
+ALGOLIA_PRODUCT_INDEX = os.environ.get('CENTRAL_ALGOLIA_PRODUCT_INDEX', 'cds_products')
+CENTRAL_ASSETS_BASE = os.environ.get('CENTRAL_ASSETS_BASE', 'https://assets.central.co.th')
 
 # ── Cloudflare-bypass HTTP helpers ────────────────────────────────────────────
 
@@ -168,6 +177,71 @@ def _get_central_html(url):
     return r.text
 
 # ── Core Functions ─────────────────────────────────────────────────────────────
+
+def try_algolia(sku):
+    """Resolve one exact SKU through Central's public Algolia search index.
+
+    Returns ``(image_url, status, page_context)`` like ``try_central_direct``.
+    ``page_context`` contains the PDP URL when Algolia exposes ``url_key`` so
+    existing gallery fallbacks can continue to use ``find_product_link``.
+    """
+    sku = (sku or '').strip().upper()
+    if not sku:
+        return None, 'not_found', ''
+
+    endpoint = (
+        f'https://{ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/'
+        f'{quote(ALGOLIA_PRODUCT_INDEX, safe="")}/{quote(sku, safe="")}'
+    )
+    headers = {
+        'X-Algolia-Application-Id': ALGOLIA_APP_ID,
+        'X-Algolia-API-Key': ALGOLIA_SEARCH_KEY,
+        'Accept': 'application/json',
+    }
+    r = _http.get(endpoint, headers=headers, timeout=10)
+    if r.status_code == 404:
+        return None, 'not_found', ''
+    r.raise_for_status()
+    record = r.json()
+
+    # getObject is exact by objectID, but validate the record as a second guard
+    # in case Central changes the index configuration later.
+    if str(record.get('sku', '')).strip().upper() != sku:
+        return None, 'not_found', ''
+
+    image_path = str(record.get('image_url') or record.get('thumbnail_url') or '').strip()
+    if not image_path or '?$' in image_path:
+        # Legacy cds_en_products returns a Scene7 asset name, not a usable URL.
+        return None, 'not_found', ''
+
+    if image_path.startswith(('http://', 'https://')):
+        image_url = image_path
+    else:
+        image_url = CENTRAL_ASSETS_BASE.rstrip('/') + '/' + image_path.lstrip('/')
+
+    # Never allow a compromised/misconfigured search record to turn the image
+    # downloader into an arbitrary URL fetcher.
+    parsed = urlparse(image_url)
+    allowed_host = urlparse(CENTRAL_ASSETS_BASE).hostname
+    if parsed.scheme != 'https' or parsed.hostname != allowed_host:
+        return None, 'not_found', ''
+
+    product_url = str(record.get('url') or '').strip()
+    if not product_url and record.get('url_key'):
+        product_url = 'https://www.central.co.th/en/' + str(record['url_key']).lstrip('/')
+    page_context = f'href="{product_url}"' if product_url else ''
+    return image_url, None, page_context
+
+def try_primary_lookup(sku):
+    """Use Algolia first; preserve the existing Central scraper as fallback."""
+    try:
+        result = try_algolia(sku)
+        if result[1] != 'not_found':
+            return result, 'algolia'
+    except Exception:
+        # A transient Algolia failure must not remove the old working path.
+        pass
+    return try_central_direct(sku), 'direct'
 
 def _get_central_html_cffi(url):
     """ดึงหน้า central ด้วย curl_cffi โดยตรง (TLS ปลอมเป็น Chrome) — ใช้เป็นไม้ตาย
@@ -416,7 +490,7 @@ def resolve_variant_gallery(sku):
       A) CDN-probe จากรูป search (variant ตรง + มีเลข -N) ← แก้บั๊กสีเพี้ยน
       B) แกลเลอรีจากหน้า product (เคส GR parent / รูปแรกเป็น PROMO ไม่มีเลข)
       C) รูปเดียวจาก search (สุดท้าย)"""
-    img_url, status, page_html = try_central_direct(sku)
+    (img_url, status, page_html), _source = try_primary_lookup(sku)
     if status == 'not_found':
         url, err = try_google_search(sku)
         if not url:
@@ -628,12 +702,12 @@ def run_download(session_id, skus, queue, img_index=1, img_format='jpg'):
     emit({'type': 'start', 'total': len(skus)})
 
     # ── STEP 1: Central direct (ขนาน 5 ตัวพร้อมกัน) ───────────────────────
-    emit({'type': 'step', 'msg': 'STEP 1 — ค้น Central.co.th โดยตรง'})
+    emit({'type': 'step', 'msg': 'STEP 1 — ค้น Algolia / Central.co.th'})
     need_google = []
 
     def _direct_one(sku):
         """ค้น + โหลดรูป 1 SKU — คืน (ผลลัพธ์, ข้อมูล) ให้ thread หลัก emit"""
-        img_url, status, page_html = try_central_direct(sku)
+        (img_url, status, page_html), lookup_source = try_primary_lookup(sku)
         if status == 'not_found':
             return 'need_google', None
         img_bytes = None
@@ -659,9 +733,13 @@ def run_download(session_id, skus, queue, img_index=1, img_format='jpg'):
                             link, sku=sku, img_index=img_index, fmt=img_format)
                     except Exception:
                         img_bytes = None
+            if img_bytes is None:
+                got = fetch_by_cdn_index(img_url, img_index, fmt=img_format)
+                if got:
+                    img_bytes, w, h = got
         if img_bytes is None:
             img_bytes, w, h = fetch_image_bytes(img_url, fmt=img_format)  # fallback รูปแรก
-        return 'ok', (img_bytes, w, h)
+        return 'ok', (img_bytes, w, h, lookup_source)
 
     with ThreadPoolExecutor(max_workers=5) as pool:
         futures = {pool.submit(_direct_one, sku): sku for sku in skus}
@@ -678,14 +756,14 @@ def run_download(session_id, skus, queue, img_index=1, img_format='jpg'):
                     emit({'type': 'item', 'sku': sku, 'status': 'need_google',
                           'msg': 'ไม่พบ → จะค้น Google'})
                 else:
-                    img_bytes, w, h = payload
+                    img_bytes, w, h, lookup_source = payload
                     kb = round(len(img_bytes) / 1024, 2)
                     images[sku] = img_bytes
                     orig[sku] = img_bytes
                     fmtmap[sku] = img_format
                     ok_direct.append({'sku': sku, 'w': w, 'h': h, 'kb': kb})
                     emit({'type': 'item', 'sku': sku, 'status': 'ok',
-                          'source': 'direct', 'w': w, 'h': h, 'kb': kb})
+                          'source': lookup_source, 'w': w, 'h': h, 'kb': kb})
             except Exception as e:
                 errors.append({'sku': sku, 'reason': str(e)})
                 emit({'type': 'item', 'sku': sku, 'status': 'error', 'msg': str(e)})
