@@ -1932,10 +1932,10 @@ HTML_PAGE = '''<!DOCTYPE html>
         </div>
         <div id="folder-row-remote" style="display:none">
           <div class="folder-row">
-            <button class="btn-secondary" onclick="browseRemoteFolder()">📁 เลือก Folder</button>
+            <button class="btn-secondary" id="remote-folder-button" onclick="browseRemoteFolder()">📁 เลือก Folder</button>
             <span id="remote-folder-name" style="font-size:.85rem;color:var(--ink-soft)">ยังไม่ได้เลือก — จะดาวน์โหลดลง Downloads</span>
           </div>
-          <p style="font-size:.78rem;color:var(--ink-soft);margin-top:7px">รองรับการบันทึกตรงเข้า Folder บน Chrome/Brave/Edge หากเบราว์เซอร์ไม่รองรับจะใช้ Downloads แทน</p>
+          <p id="remote-folder-help" style="font-size:.78rem;color:var(--ink-soft);margin-top:7px">บันทึกตรงเข้า Folder รองรับ Chrome/Edge; Brave และเบราว์เซอร์ที่ไม่รองรับจะใช้ Downloads แทน</p>
         </div>
         <p class="folder-hint" id="folder-hint"></p>
       </div>
@@ -1995,7 +1995,13 @@ fetch('/is-local').then(r=>r.json()).then(d=>{
   document.getElementById(isLocal?'folder-row-local':'folder-row-remote').style.display = isLocal?'flex':'block';
   if(isLocal){ fetch('/default-folder').then(r=>r.json()).then(d2=>{
     const inp=document.getElementById('folder-input'); if(!inp.value) inp.value=d2.folder; loadSettings();
-  }); } else { loadSettings(); }
+  }); } else {
+    loadSettings();
+    if(!window.showDirectoryPicker){
+      document.getElementById('remote-folder-button').textContent='📥 วิธีตั้ง Folder';
+      document.getElementById('remote-folder-help').textContent='Brave ปิดระบบเลือก Folder ของเว็บ: ตั้งโฟลเดอร์ดาวน์โหลดที่ brave://settings/downloads หรือใช้ Chrome/Edge';
+    }
+  }
 });
 loadTheme(); renderHistory();
 
@@ -2114,7 +2120,11 @@ function getPrefix(){ return document.getElementById('prefix-input').value.repla
 
 async function browseRemoteFolder(){
   if(!window.showDirectoryPicker){
-    alert('เบราว์เซอร์นี้ยังเลือก Folder โดยตรงไม่ได้ — ระบบจะดาวน์โหลดลง Downloads แทน'); return;
+    const brave=!!navigator.brave;
+    alert(brave
+      ? 'Brave ปิดระบบเลือก Folder ของเว็บไว้\n\nตั้งโฟลเดอร์ที่ brave://settings/downloads หรือเปิดเว็บนี้ด้วย Chrome/Edge\nไฟล์ยังดาวน์โหลดลง Downloads และปุ่มบันทึก ZIP ใช้ได้ตามปกติ'
+      : 'เบราว์เซอร์นี้ไม่รองรับการเลือก Folder โดยตรง\n\nระบบจะดาวน์โหลดลง Downloads แทน หรือเปิดเว็บนี้ด้วย Chrome/Edge');
+    return;
   }
   try{
     remoteDirHandle=await window.showDirectoryPicker({mode:'readwrite'});

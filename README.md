@@ -8,8 +8,9 @@ This project is web-first. Do not build or distribute a Windows `.exe`; run the
 Flask app locally when local folder access is needed, or use the hosted site.
 On macOS, Dicut PS connects the web page to Photoshop through the small
 localhost helper served by `/dicut-ps-helper.sh`.
-On the hosted site, Chrome/Brave/Edge users can choose a local destination via
-the browser File System Access API; other browsers fall back to Downloads.
+On the hosted site, Chrome/Edge users can choose a local destination via the
+browser File System Access API. Brave intentionally disables that API, so it
+and other unsupported browsers fall back to their configured Downloads folder.
 
 ## Run locally
 
