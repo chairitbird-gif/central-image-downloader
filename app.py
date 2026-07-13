@@ -202,13 +202,38 @@ def try_algolia(sku):
     }
     r = _http.get(endpoint, headers=headers, timeout=10)
     if r.status_code == 404:
-        return None, 'not_found', ''
-    r.raise_for_status()
-    record = r.json()
+        # Some grouped/legacy SKUs are searchable but are not the Algolia
+        # objectID. Query the SKU attribute, then still require an exact match.
+        query_endpoint = (
+            f'https://{ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/'
+            f'{quote(ALGOLIA_PRODUCT_INDEX, safe="")}/query'
+        )
+        query_body = {'query': sku, 'hitsPerPage': 20}
+        if not sku.startswith('GR'):
+            query_body['restrictSearchableAttributes'] = ['sku']
+        qr = _http.post(query_endpoint, headers={**headers, 'Content-Type': 'application/json'},
+                        json=query_body, timeout=10)
+        qr.raise_for_status()
+        hits = qr.json().get('hits') or []
+        record = next((hit for hit in hits
+                       if str(hit.get('sku', '')).strip().upper() == sku), None)
+        if not record and sku.startswith('GR'):
+            # Group SKUs are not records themselves. Central indexes their
+            # child variants and keeps the requested GR SKU in every url_key.
+            record = next((hit for hit in hits
+                           if sku.lower() in str(hit.get('url_key', '')).lower()), None)
+        if not record:
+            return None, 'not_found', ''
+    else:
+        r.raise_for_status()
+        record = r.json()
 
     # getObject is exact by objectID, but validate the record as a second guard
     # in case Central changes the index configuration later.
-    if str(record.get('sku', '')).strip().upper() != sku:
+    record_sku = str(record.get('sku', '')).strip().upper()
+    group_match = sku.startswith('GR') \
+        and sku.lower() in str(record.get('url_key', '')).lower()
+    if record_sku != sku and not group_match:
         return None, 'not_found', ''
 
     image_path = str(record.get('image_url') or record.get('thumbnail_url') or '').strip()
@@ -243,7 +268,12 @@ def try_primary_lookup(sku):
     except Exception:
         # A transient Algolia failure must not remove the old working path.
         pass
-    return try_central_direct(sku), 'direct'
+    try:
+        return try_central_direct(sku), 'direct'
+    except Exception:
+        # On cloud hosts www.central.co.th may reject the IP. Treat that as a
+        # normal miss so the existing Google fallback can still run.
+        return (None, 'not_found', ''), 'direct'
 
 def _get_central_html_cffi(url):
     """ดึงหน้า central ด้วย curl_cffi โดยตรง (TLS ปลอมเป็น Chrome) — ใช้เป็นไม้ตาย
@@ -346,6 +376,32 @@ def try_google_search(sku):
     except Exception as e:
         return None, str(e)
 
+def _central_proxy_url(image_url):
+    """Return the configured proxy URL only for Central's validated asset host."""
+    if not CENTRAL_IMAGE_PROXY_BASE:
+        return None
+    if urlparse(image_url).hostname != urlparse(CENTRAL_ASSETS_BASE).hostname:
+        return None
+    return CENTRAL_IMAGE_PROXY_BASE + quote(image_url, safe='')
+
+def _image_url_exists(image_url):
+    """Probe an image without downloading it; retry Central CDN through proxy."""
+    try:
+        r = _http.head(image_url, headers=HEADERS, timeout=8)
+        if r.status_code == 200:
+            return True
+        if r.status_code not in (403, 429, 503):
+            return False
+    except Exception:
+        pass
+    proxy_url = _central_proxy_url(image_url)
+    if not proxy_url:
+        return False
+    try:
+        return _http.head(proxy_url, headers=HEADERS, timeout=15).status_code == 200
+    except Exception:
+        return False
+
 def fetch_image_bytes(image_url, referer='https://www.central.co.th/', fmt='jpg'):
     """โหลดรูปขนาดเดิม + แปลงฟอร์แมต — JPG q100 หรือ PNG lossless"""
     image_headers = {**HEADERS, 'Referer': referer,
@@ -370,10 +426,8 @@ def fetch_image_bytes(image_url, referer='https://www.central.co.th/', fmt='jpg'
             and CENTRAL_IMAGE_PROXY_BASE:
         # assets.central.co.th also blocks some datacenter IPs (including
         # Render). Proxy only validated Central CDN URLs; never arbitrary URLs.
-        source_host = urlparse(image_url).hostname
-        allowed_host = urlparse(CENTRAL_ASSETS_BASE).hostname
-        if source_host == allowed_host:
-            proxy_url = CENTRAL_IMAGE_PROXY_BASE + quote(image_url, safe='')
+        proxy_url = _central_proxy_url(image_url)
+        if proxy_url:
             proxy_r = _http.get(proxy_url, headers=HEADERS, timeout=30)
             proxy_r.raise_for_status()
             content = proxy_r.content
@@ -467,8 +521,7 @@ def fetch_by_cdn_index(first_img_url, img_index, fmt='jpg'):
         return None  # รูปแรกไม่มีเลขลำดับ (เช่น PROMO) — เดาไม่ได้
     cand = first_img_url[:m.start()] + f'-{img_index}.{m.group(2)}'
     try:
-        r = _http.head(cand, headers=HEADERS, timeout=8)
-        if r.status_code != 200:
+        if not _image_url_exists(cand):
             return None
         return fetch_image_bytes(cand, fmt=fmt)
     except Exception:
@@ -486,11 +539,7 @@ def _cdn_probe_series(first_img_url, max_n=20):
     urls = []
     for i in range(1, max_n + 1):
         cand = f'{base}-{i}.{ext}'
-        try:
-            r = _http.head(cand, headers=HEADERS, timeout=8)
-        except Exception:
-            break
-        if r.status_code == 200:
+        if _image_url_exists(cand):
             urls.append(cand)
         elif i == 1:
             return []       # ไม่มีแม้แต่ -1 = pattern ใช้ไม่ได้
@@ -782,8 +831,12 @@ def run_download(session_id, skus, queue, img_index=1, img_format='jpg'):
                     emit({'type': 'item', 'sku': sku, 'status': 'ok',
                           'source': lookup_source, 'w': w, 'h': h, 'kb': kb})
             except Exception as e:
-                errors.append({'sku': sku, 'reason': str(e)})
-                emit({'type': 'item', 'sku': sku, 'status': 'error', 'msg': str(e)})
+                # A resolved Algolia/CDN URL can still fail at download time.
+                # Do not stop here: feed it into the same recheck + Google
+                # chain used by lookup misses.
+                need_google.append(sku)
+                emit({'type': 'item', 'sku': sku, 'status': 'need_google',
+                      'msg': 'โหลดจาก Central ไม่สำเร็จ → จะค้น Google'})
     # คงลำดับเดิมตามที่ผู้ใช้พิมพ์ (as_completed ทำให้ลำดับสลับ)
     need_google.sort(key=skus.index)
 
@@ -1060,6 +1113,7 @@ import tempfile
 import threading
 
 PORT = 5010
+HELPER_VERSION = 2
 _lock = threading.Lock()   # Photoshop ทำทีละรูป
 
 def ps_app_name():
@@ -1122,6 +1176,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _send(self, code, body, ctype):
         self.send_response(code)
         self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Private-Network', 'true')
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
@@ -1132,14 +1187,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/has-ps':
-            self._json({'available': ps_app_name() is not None})
+            self._json({'available': ps_app_name() is not None,
+                        'version': HELPER_VERSION})
         else:
             self._json({'error': 'not found'}, 404)
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Private-Network', 'true')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
 
@@ -1230,7 +1287,7 @@ RUNEOF
 chmod +x "$RUNNER"
 echo "✅ ติดตั้งไฟล์ลง $DIR แล้ว"
 
-osascript >/dev/null 2>&1 <<EOF
+if osascript >/dev/null 2>&1 <<EOF
 tell application "System Events"
     try
         delete (every login item whose name contains "Dicut PS Helper run")
@@ -1238,7 +1295,11 @@ tell application "System Events"
     make login item at end with properties {path:"$RUNNER", hidden:true}
 end tell
 EOF
-echo "✅ ตั้งค่าเปิดอัตโนมัติตอนเปิดเครื่องแล้ว"
+then
+    echo "✅ ตั้งค่าเปิดอัตโนมัติตอนเปิดเครื่องแล้ว"
+else
+    echo "⚠️ ตั้งค่าเปิดอัตโนมัติไม่ได้ — helper รอบนี้ยังใช้ได้ แต่หลัง restart ให้รันตัวติดตั้งอีกครั้ง"
+fi
 
 pkill -f "dicut_ps_helper\.py" 2>/dev/null
 sleep 1
@@ -1317,8 +1378,7 @@ def ps_remove_bg():
         resp.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
         resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
         return resp
-    remote = request.remote_addr or ''
-    if remote not in ('127.0.0.1', '::1'):
+    if not _request_is_local():
         return _cors_json({'ok': False, 'error': 'localhost เท่านั้น'}, 403)
     if not has_photoshop():
         return _cors_json({'ok': False, 'error': 'ไม่พบ Photoshop ในเครื่องนี้'}, 501)
@@ -1375,10 +1435,20 @@ def default_folder():
     downloads = Path.home() / 'Downloads' / 'central_images'
     return {'folder': str(downloads)}
 
+def _request_is_local():
+    """True only when the browser reached this server through a loopback host.
+
+    Render's reverse proxy connects to Gunicorn from 127.0.0.1, so checking
+    ``remote_addr`` alone incorrectly exposes server-side folder controls.
+    """
+    host = (request.host or '').rsplit(':', 1)[0].strip('[]').lower()
+    remote = request.remote_addr or ''
+    return host in ('localhost', '127.0.0.1', '::1') \
+        and remote in ('127.0.0.1', '::1', 'localhost')
+
 @app.route('/pick-folder')
 def pick_folder():
-    remote = request.remote_addr or ''
-    if remote not in ('127.0.0.1', '::1', 'localhost'):
+    if not _request_is_local():
         return {'ok': False, 'error': 'localhost เท่านั้น'}, 403
     if IS_MAC:
         try:
@@ -1422,14 +1492,11 @@ def pick_folder():
 
 @app.route('/is-local')
 def is_local():
-    remote = request.remote_addr or ''
-    local = remote in ('127.0.0.1', '::1', 'localhost')
-    return {'local': local}
+    return {'local': _request_is_local()}
 
 @app.route('/prepare-folder', methods=['POST'])
 def prepare_folder():
-    remote = request.remote_addr or ''
-    if remote not in ('127.0.0.1', '::1', 'localhost'):
+    if not _request_is_local():
         return {'ok': False, 'error': 'localhost เท่านั้น'}, 403
     data = request.json or {}
     folder = data.get('folder', '').strip()
@@ -1443,8 +1510,7 @@ def prepare_folder():
 
 @app.route('/save-folder', methods=['POST'])
 def save_folder():
-    remote = request.remote_addr or ''
-    if remote not in ('127.0.0.1', '::1', 'localhost'):
+    if not _request_is_local():
         return {'ok': False, 'error': 'localhost เท่านั้น'}, 403
     data = request.json or {}
     session_id = data.get('session_id', '')
@@ -1475,8 +1541,7 @@ def save_folder():
 @app.route('/open-folder', methods=['POST'])
 def open_folder():
     """เปิดโฟลเดอร์ใน File Explorer / Finder (localhost เท่านั้น)"""
-    remote = request.remote_addr or ''
-    if remote not in ('127.0.0.1', '::1', 'localhost'):
+    if not _request_is_local():
         return {'ok': False, 'error': 'localhost เท่านั้น'}, 403
     folder = (request.json or {}).get('folder', '').strip()
     if not folder or not Path(folder).exists():
@@ -1557,10 +1622,8 @@ def get_thumb(session_id, sku, index):
             gallery = _get_gallery_urls(sess, sku)
             if not gallery or index < 1 or index > len(gallery):
                 return 'ไม่พบ', 404
-            r = _http.get(gallery[index - 1],
-                          headers={**HEADERS, 'Referer': 'https://www.central.co.th/'}, timeout=15)
-            r.raise_for_status()
-            im = Image.open(io.BytesIO(r.content)).convert('RGB')
+            image_bytes, _w, _h = fetch_image_bytes(gallery[index - 1], fmt='jpg')
+            im = Image.open(io.BytesIO(image_bytes)).convert('RGB')
             im.thumbnail((130, 130))
             buf = io.BytesIO()
             im.save(buf, 'JPEG', quality=80)
@@ -1836,8 +1899,8 @@ HTML_PAGE = '''<!DOCTYPE html>
       </div>
       <div class="field-group">
         <span>ไฟล์</span>
-        <select id="img-format" onchange="saveSettings()" title="JPEG = ไฟล์เล็ก · PNG = คมสุด (ไม่บีบอัด)">
-          <option value="jpg">JPEG</option><option value="png">PNG (คมสุด)</option>
+        <select id="img-format" onchange="saveSettings()" title="JPEG = คุณภาพ 100 · PNG = ไม่บีบอัด">
+          <option value="jpg">JPEG (q100)</option><option value="png">PNG (ไม่บีบอัด)</option>
         </select>
       </div>
       <button class="btn-secondary" onclick="clearAll()">🗑 ล้าง</button>
@@ -2230,7 +2293,7 @@ function handleMsg(msg){
     case 'progress': if(msg.status==='searching'){ current++; setProgress(current,total); } break;
     case 'session': sessionId=msg.id; break;
     case 'item':
-      if(msg.status==='ok'){ const src=msg.source==='direct'?'Central':'Google';
+      if(msg.status==='ok'){ const src=msg.source==='google'?'Google':'Central';
         log(`  ✅  ${msg.sku.padEnd(28)}  ${msg.w}×${msg.h}px   ${msg.kb} KB   [${src}]`,'c-ok');
         if(sessionId){ addImage(sessionId,msg.sku); autoDownloadImage(sessionId,msg.sku); } }
       else if(msg.status==='need_google') log(`  ⏭   ${msg.sku.padEnd(28)}  ไม่พบ → จะค้น Google`,'c-warn');
@@ -2317,19 +2380,23 @@ async function dicutAll(method){
   let psBase='';
   if(method==='ps'){
     const pageLocal=['localhost','127.0.0.1'].includes(location.hostname);
-    const bases=pageLocal?['']:[...new Set([`http://localhost:${location.port||'5000'}`,
-      'http://localhost:5001','http://localhost:5010'])];
+    // Windows local uses this Flask process; Mac always uses the lightweight
+    // helper on 5010. Probe both even when the page itself is localhost.
+    const bases=pageLocal?['','http://localhost:5010']:
+      [...new Set(['http://localhost:5000','http://localhost:5001','http://localhost:5010'])];
     let psOk=false;
     for(const b of bases){
       try{ const chk=await (await fetch(b+'/has-ps',{signal:AbortSignal.timeout(2500)})).json();
-        if(chk.available){ psBase=b; psOk=true; break; } }catch(e){}
+        const currentHelper=!b.endsWith(':5010')||Number(chk.version||0)>=2;
+        if(chk.available&&currentHelper){ psBase=b; psOk=true; break; } }catch(e){}
     }
     if(!psOk){
-      if(pageLocal){ alert('ใช้ Dicut PS ไม่ได้ — ไม่พบ Photoshop ในเครื่องนี้'); return; }
-      // เครื่อง LAN ยังไม่มีตัวช่วย → ให้คัดลอกคำสั่งไปวางใน Terminal ครั้งเดียว
+      const isMac=/Macintosh|Mac OS X/i.test(navigator.userAgent);
+      if(!isMac){ alert('ใช้ Dicut PS ไม่ได้ — ไม่พบ Photoshop หรือตัวช่วยในเครื่องนี้'); return; }
+      // Mac ยังไม่มีตัวช่วย → ให้คัดลอกคำสั่งไปวางใน Terminal ครั้งเดียว
       // (แจกเป็นไฟล์ .command ไม่ได้แล้ว — macOS Sequoia บล็อกไฟล์ที่โหลดมาแบบ
       //  ไม่มีปุ่มยอม แต่ curl|bash ไม่โดน quarantine เพราะไม่มีไฟล์ลงเครื่อง)
-      const cmd=`curl -s http://${location.host}/dicut-ps-helper.sh | bash`;
+      const cmd=`curl -fsSL "${location.origin}/dicut-ps-helper.sh" | bash`;
       prompt('ยังไม่ได้ติดตั้งตัวช่วย Dicut PS ในเครื่องนี้\\n'
         +'(ปุ่มนี้ใช้ Photoshop ของเครื่องคุณเอง — ต้องมี Photoshop ติดตั้งอยู่)\\n\\n'
         +'ติดตั้งครั้งเดียวใช้ได้ถาวร:\\n'
@@ -2362,7 +2429,8 @@ async function dicutAll(method){
         // 1) ดึงต้นฉบับดิบจากแม่ข่าย 2) ส่งให้ PS ในเครื่องตัวเองตัดพื้น 3) ส่งผลกลับแม่ข่าย
         const raw=await (await fetch(`/img-raw/${sessionId}/${sku}`)).blob();
         const psRes=await fetch(psBase+'/ps-remove-bg',{method:'POST',
-          headers:{'Content-Type':'application/octet-stream'},body:raw});
+          headers:{'Content-Type':'application/octet-stream'},body:raw,
+          signal:AbortSignal.timeout(195000)});
         if(!psRes.ok||!(psRes.headers.get('Content-Type')||'').includes('image/png')){
           let msg='PS ตัดพื้นล้มเหลว';
           try{ const ej=await psRes.json(); if(ej.error) msg=ej.error; }catch(_){}
@@ -2428,8 +2496,7 @@ def save_zip_file(session_id):
     # LAN เดียวกันที่เดา/ได้ session_id มา จะสั่งเขียนไฟล์ ZIP ไปที่ path ใดก็ได้บน
     # เครื่องนี้ได้ (ผ่านค่า 'folder' ที่ client ส่งมาเอง) — ต้องจำกัดเฉพาะ localhost
     # เหมือน /pick-folder, /prepare-folder, /save-folder
-    remote = request.remote_addr or ''
-    if remote not in ('127.0.0.1', '::1', 'localhost'):
+    if not _request_is_local():
         return {'ok': False, 'error': 'localhost เท่านั้น'}, 403
     sess = sessions.get(session_id)
     if not sess or not sess['images']:

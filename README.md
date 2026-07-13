@@ -4,6 +4,11 @@ Deployment copy of the existing Central Image Downloader UI. It keeps the
 current workflow and supports Central image lookup, gallery selection, ZIP,
 Dicut, Dicut AI, and the existing local Photoshop-helper flow.
 
+This project is web-first. Do not build or distribute a Windows `.exe`; run the
+Flask app locally when local folder access is needed, or use the hosted site.
+On macOS, Dicut PS connects the web page to Photoshop through the small
+localhost helper served by `/dicut-ps-helper.sh`.
+
 ## Run locally
 
 ```powershell
