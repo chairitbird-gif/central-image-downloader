@@ -1812,6 +1812,9 @@ HTML_PAGE = '''<!DOCTYPE html>
   .img-card.has-cmp .imgwrap { cursor:ew-resize; }
   .img-card.has-cmp .imgwrap::before { content:'⇄ ลากเทียบ'; position:absolute; top:5px; left:5px;
     z-index:3; background:rgba(0,0,0,.55); color:#fff; font-size:.6rem; padding:2px 6px; border-radius:4px; }
+  .img-card.busy .imgwrap::after { content:'⏳ กำลังโหลดรูป...'; position:absolute; inset:0; z-index:9;
+    display:grid; place-items:center; background:rgba(20,17,17,.72); color:#fff; font-size:.82rem;
+    font-weight:700; cursor:wait; }
   .img-card .meta { padding:7px 8px 9px; }
   .img-card .metarow { display:flex; align-items:center; gap:6px; }
   .img-card .sku { font-size:.72rem; color:var(--ink); font-weight:600; word-break:break-all;
@@ -1914,7 +1917,7 @@ HTML_PAGE = '''<!DOCTYPE html>
     <div class="save-section">
       <label class="save-toggle">
         <input type="checkbox" id="chk-save" onchange="toggleSave()">
-        <span>💾 บันทึกภาพอัตโนมัติเมื่อโหลดเสร็จ</span>
+        <span id="save-toggle-label">💾 บันทึกภาพอัตโนมัติเมื่อโหลดเสร็จ</span>
       </label>
       <div id="folder-area">
         <div class="folder-row" id="folder-row-local" style="display:none">
@@ -2000,6 +2003,7 @@ fetch('/is-local').then(r=>r.json()).then(d=>{
     if(!window.showDirectoryPicker){
       document.getElementById('remote-folder-button').textContent='📥 วิธีตั้ง Folder';
       document.getElementById('remote-folder-help').textContent='Brave ปิดระบบเลือก Folder ของเว็บ: ตั้งโฟลเดอร์ดาวน์โหลดที่ brave://settings/downloads หรือใช้ Chrome/Edge';
+      document.getElementById('save-toggle-label').textContent='💾 ดาวน์โหลดภาพอัตโนมัติลง Downloads เมื่อโหลดเสร็จ';
     }
   }
 });
@@ -2226,10 +2230,18 @@ function pumpCount(){
     }).catch(()=>{}).finally(()=>{ countActive--; pumpCount(); });
   }
 }
-function refreshCard(sku){
+function refreshCard(sku,onReady){
   const card=document.querySelector(`.img-card[data-sku="${sku}"]`); if(!card) return;
   const t='?t='+Date.now();
-  const after=card.querySelector('.cmp-after'); if(after) after.src=`/img/${sessionId}/${sku}`+t;
+  const after=card.querySelector('.cmp-after');
+  if(after){
+    if(onReady){
+      let finished=false;
+      const done=()=>{ if(finished) return; finished=true; after.onload=null; after.onerror=null; onReady(); };
+      after.onload=done; after.onerror=done; setTimeout(done,30000);
+    }
+    after.src=`/img/${sessionId}/${sku}`+t;
+  }
   // โหลดรูปต้นฉบับสำหรับเทียบเฉพาะตอน dicut แล้ว (has-cmp)
   const before=card.querySelector('.cmp-before');
   if(before && card.classList.contains('has-cmp')) before.src=`/img-orig/${sessionId}/${sku}`+t;
@@ -2237,7 +2249,9 @@ function refreshCard(sku){
 async function setCardImage(sku,index,btn){
   const card=btn.closest('.img-card');
   const wrap=card.querySelector('.chips');
+  card.classList.add('busy');
   card.querySelectorAll('.chip').forEach(c=>c.disabled=true);
+  let refreshStarted=false;
   try{
     const d=await (await fetch(`/set-image/${sessionId}/${sku}`,{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify({index})})).json();
@@ -2245,10 +2259,12 @@ async function setCardImage(sku,index,btn){
       wrap.setAttribute('data-sel', d.index||index);
       renderChips(sku, d.total || card.querySelectorAll('.chip').length);
       card.classList.remove('has-cmp');   // เปลี่ยนรูป = ยกเลิก dicut เดิม
-      refreshCard(sku);
+      refreshStarted=true;
+      refreshCard(sku,()=>card.classList.remove('busy'));
       if(autoSave&&isLocal){ savedSkus.delete(sku); await autoDownloadImage(sessionId,sku); }
     } else { toast('เปลี่ยนรูปไม่ได้: '+(d.error||'')); }
   }catch(e){ toast('เปลี่ยนรูปล้มเหลว'); }
+  if(!refreshStarted) card.classList.remove('busy');
   card.querySelectorAll('.chip').forEach(c=>c.disabled=false);
 }
 
