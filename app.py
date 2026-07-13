@@ -87,6 +87,8 @@ ALGOLIA_SEARCH_KEY = os.environ.get(
     'CENTRAL_ALGOLIA_SEARCH_KEY', '219108856fc945a087d091aebc7eebbb')
 ALGOLIA_PRODUCT_INDEX = os.environ.get('CENTRAL_ALGOLIA_PRODUCT_INDEX', 'cds_products')
 CENTRAL_ASSETS_BASE = os.environ.get('CENTRAL_ASSETS_BASE', 'https://assets.central.co.th')
+CENTRAL_IMAGE_PROXY_BASE = os.environ.get(
+    'CENTRAL_IMAGE_PROXY_BASE', 'https://images.weserv.nl/?url=')
 
 # ── Cloudflare-bypass HTTP helpers ────────────────────────────────────────────
 
@@ -357,10 +359,24 @@ def fetch_image_bytes(image_url, referer='https://www.central.co.th/', fmt='jpg'
         if r2.status_code == 200:
             content = r2.content
     if content is None and r.status_code in (403, 429, 503):
-        if not _curl_warmed:
-            _curl_warmup()
-            _curl_warmed = True
-        content = _curl_get_bytes(image_url, referer=referer)
+        try:
+            if not _curl_warmed:
+                _curl_warmup()
+                _curl_warmed = True
+            content = _curl_get_bytes(image_url, referer=referer)
+        except Exception:
+            content = None
+    if content is None and r.status_code in (403, 429, 503) \
+            and CENTRAL_IMAGE_PROXY_BASE:
+        # assets.central.co.th also blocks some datacenter IPs (including
+        # Render). Proxy only validated Central CDN URLs; never arbitrary URLs.
+        source_host = urlparse(image_url).hostname
+        allowed_host = urlparse(CENTRAL_ASSETS_BASE).hostname
+        if source_host == allowed_host:
+            proxy_url = CENTRAL_IMAGE_PROXY_BASE + quote(image_url, safe='')
+            proxy_r = _http.get(proxy_url, headers=HEADERS, timeout=30)
+            proxy_r.raise_for_status()
+            content = proxy_r.content
     if content is None:
         r.raise_for_status()
         content = r.content

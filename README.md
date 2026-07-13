@@ -22,6 +22,9 @@ Open `http://localhost:5000`.
 - The Algolia defaults can be overridden with `CENTRAL_ALGOLIA_APP_ID`,
   `CENTRAL_ALGOLIA_SEARCH_KEY`, `CENTRAL_ALGOLIA_PRODUCT_INDEX`, and
   `CENTRAL_ASSETS_BASE` if Central rotates its public storefront configuration.
+- If Central's asset CDN returns 403 to the host, the app retries that validated
+  CDN URL through `images.weserv.nl`. Override or disable this fallback with
+  `CENTRAL_IMAGE_PROXY_BASE` (set it to an empty value to disable it).
 - `REMBG_MODEL=u2netp` is the low-memory default for hosted Dicut AI.
 - Set `ACCESS_PASSWORD` to protect a private deployment; leave it unset for the
   same link-only public access model as the Strip Banner app.
