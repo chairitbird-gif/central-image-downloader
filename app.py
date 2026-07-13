@@ -88,7 +88,7 @@ ALGOLIA_SEARCH_KEY = os.environ.get(
 ALGOLIA_PRODUCT_INDEX = os.environ.get('CENTRAL_ALGOLIA_PRODUCT_INDEX', 'cds_products')
 CENTRAL_ASSETS_BASE = os.environ.get('CENTRAL_ASSETS_BASE', 'https://assets.central.co.th')
 CENTRAL_IMAGE_PROXY_BASE = os.environ.get(
-    'CENTRAL_IMAGE_PROXY_BASE', 'https://images.weserv.nl/?url=')
+    'CENTRAL_IMAGE_PROXY_BASE', 'https://images.weserv.nl/?q=100&url=')
 
 # ── Cloudflare-bypass HTTP helpers ────────────────────────────────────────────
 
@@ -347,7 +347,7 @@ def try_google_search(sku):
         return None, str(e)
 
 def fetch_image_bytes(image_url, referer='https://www.central.co.th/', fmt='jpg'):
-    """โหลดรูป + แปลงฟอร์แมต — fmt='jpg' (q95, ไฟล์เล็ก) หรือ 'png' (lossless, คมสุด)"""
+    """โหลดรูปขนาดเดิม + แปลงฟอร์แมต — JPG q100 หรือ PNG lossless"""
     image_headers = {**HEADERS, 'Referer': referer,
                      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'}
     global _curl_warmed
@@ -386,7 +386,7 @@ def fetch_image_bytes(image_url, referer='https://www.central.co.th/', fmt='jpg'
     if fmt == 'png':
         img.save(buf, 'PNG')
     else:
-        img.save(buf, 'JPEG', quality=95)
+        img.save(buf, 'JPEG', quality=100, subsampling=0)
     buf.seek(0)
     return buf.getvalue(), w, h
 
@@ -562,7 +562,8 @@ def _png_bytes(img):
     b = io.BytesIO(); img.save(b, 'PNG'); return b.getvalue()
 
 def _jpg_bytes(img):
-    b = io.BytesIO(); img.convert('RGB').save(b, 'JPEG', quality=95); return b.getvalue()
+    b = io.BytesIO(); img.convert('RGB').save(
+        b, 'JPEG', quality=100, subsampling=0); return b.getvalue()
 
 def _finish_dicut(rgba, orig_rgb):
     """trim รูปโปร่งใส + crop รูปต้นฉบับให้ตรงกรอบเดียวกัน (สำหรับ comparison slider)
