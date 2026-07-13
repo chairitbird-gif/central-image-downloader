@@ -117,7 +117,8 @@ def _get_central_html(url):
     if IS_MAC:
         # Mac โดน Cloudflare บล็อก TLS ของ Python — ต้องใช้ curl_cffi/curl
         if HAS_CURL_CFFI:
-            r = cffi_requests.get(url, impersonate='chrome124', timeout=15)
+            r = cffi_requests.get(url, headers=HEADERS,
+                                  impersonate='chrome124', timeout=15)
             if r.status_code in (403, 429, 503):
                 raise requests.exceptions.HTTPError(str(r.status_code))
             r.raise_for_status()
@@ -129,9 +130,18 @@ def _get_central_html(url):
     r = _http.get(url, timeout=15)
     if r.status_code in (403, 429, 503) and HAS_CURL_CFFI:
         # โดนบล็อก → ลองใหม่ด้วย TLS ปลอมเป็น Chrome
-        r2 = cffi_requests.get(url, impersonate='chrome124', timeout=15)
-        r2.raise_for_status()
-        return r2.text
+        try:
+            r2 = cffi_requests.get(url, headers=HEADERS,
+                                   impersonate='chrome124', timeout=15)
+            r2.raise_for_status()
+            return r2.text
+        except Exception:
+            # curl uses another HTTP/TLS implementation and keeps a cookie jar;
+            # it is the final fallback for datacenter-hosted deployments.
+            if not _curl_warmed:
+                _curl_warmup()
+                _curl_warmed = True
+            return _curl_get_html(url)
     r.raise_for_status()
     return r.text
 
@@ -140,7 +150,8 @@ def _get_central_html(url):
 def _get_central_html_cffi(url):
     """ดึงหน้า central ด้วย curl_cffi โดยตรง (TLS ปลอมเป็น Chrome) — ใช้เป็นไม้ตาย
     ตอนหน้า search ตอบ 'ไม่พบ' ปลอมๆ ให้ session ปกติ (คนละ TLS fingerprint)"""
-    r = cffi_requests.get(url, impersonate='chrome124', timeout=15)
+    r = cffi_requests.get(url, headers=HEADERS,
+                          impersonate='chrome124', timeout=15)
     r.raise_for_status()
     return r.text
 
@@ -239,7 +250,12 @@ def try_google_search(sku):
 
 def fetch_image_bytes(image_url, referer='https://www.central.co.th/', fmt='jpg'):
     """โหลดรูป + แปลงฟอร์แมต — fmt='jpg' (q95, ไฟล์เล็ก) หรือ 'png' (lossless, คมสุด)"""
-    r = _http.get(image_url, headers={**HEADERS, 'Referer': referer}, timeout=15)
+    image_headers = {**HEADERS, 'Referer': referer,
+                     'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'}
+    r = _http.get(image_url, headers=image_headers, timeout=15)
+    if r.status_code in (403, 429, 503) and HAS_CURL_CFFI:
+        r = cffi_requests.get(image_url, headers=image_headers,
+                              impersonate='chrome124', timeout=15)
     r.raise_for_status()
     img = Image.open(io.BytesIO(r.content)).convert('RGB')
     w, h = img.size
