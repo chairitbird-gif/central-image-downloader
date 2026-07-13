@@ -1931,7 +1931,11 @@ HTML_PAGE = '''<!DOCTYPE html>
           <span style="font-size:.76rem;color:var(--ink-soft)">→ ตัวอย่าง: <span id="prefix-eg">CDS123.jpg</span></span>
         </div>
         <div id="folder-row-remote" style="display:none">
-          <p style="font-size:.85rem;color:var(--ink-soft)">📥 ภาพจะดาวน์โหลดลง Downloads ของเครื่องคุณอัตโนมัติทีละภาพ</p>
+          <div class="folder-row">
+            <button class="btn-secondary" onclick="browseRemoteFolder()">📁 เลือก Folder</button>
+            <span id="remote-folder-name" style="font-size:.85rem;color:var(--ink-soft)">ยังไม่ได้เลือก — จะดาวน์โหลดลง Downloads</span>
+          </div>
+          <p style="font-size:.78rem;color:var(--ink-soft);margin-top:7px">รองรับการบันทึกตรงเข้า Folder บน Chrome/Brave/Edge หากเบราว์เซอร์ไม่รองรับจะใช้ Downloads แทน</p>
         </div>
         <p class="folder-hint" id="folder-hint"></p>
       </div>
@@ -1978,7 +1982,7 @@ HTML_PAGE = '''<!DOCTYPE html>
 
 <script>
 const MAX_SKUS=Number('__MAX_SKUS__');
-let sessionId=null, total=0, current=0, autoSave=false, isLocal=false;
+let sessionId=null, total=0, current=0, autoSave=false, isLocal=false, remoteDirHandle=null;
 fetch('/has-ai').then(r=>r.json()).then(d=>{
   if(!d.available) document.getElementById('dicut-ai-col').style.display='none';
 }).catch(()=>{ document.getElementById('dicut-ai-col').style.display='none'; });
@@ -2108,6 +2112,23 @@ async function createAndOpen(){
 function resetFolder(){ document.getElementById('folder-input').value=''; document.getElementById('folder-hint').textContent=''; saveSettings(); }
 function getPrefix(){ return document.getElementById('prefix-input').value.replace(/[<>:"/\\\\|?*]/g,'').slice(0,40); }
 
+async function browseRemoteFolder(){
+  if(!window.showDirectoryPicker){
+    alert('เบราว์เซอร์นี้ยังเลือก Folder โดยตรงไม่ได้ — ระบบจะดาวน์โหลดลง Downloads แทน'); return;
+  }
+  try{
+    remoteDirHandle=await window.showDirectoryPicker({mode:'readwrite'});
+    document.getElementById('remote-folder-name').textContent='✅ '+remoteDirHandle.name;
+    document.getElementById('folder-hint').textContent='เลือก Folder แล้ว ภาพใหม่จะบันทึกตรงเข้า Folder นี้';
+  }catch(e){ if(e.name!=='AbortError') alert('เลือก Folder ไม่สำเร็จ: '+e.message); }
+}
+
+async function saveBlobToRemoteFolder(blob,filename){
+  const fh=await remoteDirHandle.getFileHandle(filename,{create:true});
+  const wr=await fh.createWritable();
+  try{ await wr.write(blob); } finally { await wr.close(); }
+}
+
 // ---------- log / progress ----------
 function log(html,cls){ const el=document.getElementById('log');
   el.innerHTML+=`<p class="${cls||''}">${html}</p>`; el.scrollTop=el.scrollHeight; }
@@ -2139,10 +2160,12 @@ async function autoDownloadImage(sid,sku){
       body:JSON.stringify({session_id:sid,sku,folder,prefix:getPrefix()})})).json();
     if(!d.ok) log('  ⚠ บันทึก '+sku+' ล้มเหลว: '+d.error,'c-warn');
   } else {
-    // เครื่องอื่น (LAN): ดาวน์โหลดทีละภาพลง Downloads ของเครื่องนั้น
-    // (ถ้า Chrome เด้ง "Keep" ให้ตั้ง Site settings > Insecure content = Allow ครั้งเดียว)
+    // Hosted/LAN: save through the browser-selected directory when supported.
     const ext=document.getElementById('img-format').value;
     try{ const blob=await (await fetch(`/img/${sid}/${sku}`)).blob();
+      if(remoteDirHandle){
+        await saveBlobToRemoteFolder(blob,getPrefix()+sku+'.'+ext); return;
+      }
       const url=URL.createObjectURL(blob); const a=document.createElement('a');
       a.href=url; a.download=getPrefix()+sku+'.'+ext; document.body.appendChild(a); a.click();
       setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},800);
@@ -2448,10 +2471,13 @@ async function dicutAll(method){
         // เปิด/ปิดโหมดเปรียบเทียบ: dicut แล้วมีต้นฉบับให้ลากเทียบ / กดต้นฉบับ = ปิด
         if(card){ if(method==='orig') card.classList.remove('has-cmp'); else card.classList.add('has-cmp'); }
         refreshCard(sku);
-        if(autoSave&&isLocal){ const folder=document.getElementById('folder-input').value.trim();
-          if(folder){ lastFolder=folder; await fetch('/save-folder',{method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({session_id:sessionId,sku,folder,prefix:getPrefix()})}); } } }
+        if(autoSave){
+          if(isLocal){ const folder=document.getElementById('folder-input').value.trim();
+            if(folder){ lastFolder=folder; await fetch('/save-folder',{method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({session_id:sessionId,sku,folder,prefix:getPrefix()})}); } }
+          else { savedSkus.delete(sku); await autoDownloadImage(sessionId,sku); }
+        } }
       else { fail++; if(!firstErr) firstErr=d.error||''; }
     }catch(e){ fail++; if(!firstErr) firstErr=e.message||String(e); }
   }
@@ -2479,6 +2505,10 @@ async function downloadZip(){
     }catch(e){ alert('เกิดข้อผิดพลาด: '+e.message); }
   } else {
     try{ const blob=await (await fetch('/zip/'+sessionId)).blob();
+      if(remoteDirHandle){
+        await saveBlobToRemoteFolder(blob,'central_images.zip');
+        toast('บันทึก ZIP ลง '+remoteDirHandle.name+' สำเร็จ'); return;
+      }
       const url=URL.createObjectURL(blob); const a=document.createElement('a');
       a.href=url; a.download='central_images.zip'; document.body.appendChild(a); a.click();
       setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},2000);
