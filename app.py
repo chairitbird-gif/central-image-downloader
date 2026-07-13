@@ -2121,9 +2121,10 @@ function getPrefix(){ return document.getElementById('prefix-input').value.repla
 async function browseRemoteFolder(){
   if(!window.showDirectoryPicker){
     const brave=!!navigator.brave;
+    const nl=String.fromCharCode(10);
     alert(brave
-      ? 'Brave ปิดระบบเลือก Folder ของเว็บไว้\n\nตั้งโฟลเดอร์ที่ brave://settings/downloads หรือเปิดเว็บนี้ด้วย Chrome/Edge\nไฟล์ยังดาวน์โหลดลง Downloads และปุ่มบันทึก ZIP ใช้ได้ตามปกติ'
-      : 'เบราว์เซอร์นี้ไม่รองรับการเลือก Folder โดยตรง\n\nระบบจะดาวน์โหลดลง Downloads แทน หรือเปิดเว็บนี้ด้วย Chrome/Edge');
+      ? ['Brave ปิดระบบเลือก Folder ของเว็บไว้','','ตั้งโฟลเดอร์ที่ brave://settings/downloads หรือเปิดเว็บนี้ด้วย Chrome/Edge','ไฟล์ยังดาวน์โหลดลง Downloads และปุ่มบันทึก ZIP ใช้ได้ตามปกติ'].join(nl)
+      : ['เบราว์เซอร์นี้ไม่รองรับการเลือก Folder โดยตรง','','ระบบจะดาวน์โหลดลง Downloads แทน หรือเปิดเว็บนี้ด้วย Chrome/Edge'].join(nl));
     return;
   }
   try{
