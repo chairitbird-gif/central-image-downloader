@@ -8,3 +8,6 @@ dist/
 *.log
 *.pem
 u2net_models/
+
+CODEX_DELEGATION.md
+CENTRAL_API_FINDINGS.md

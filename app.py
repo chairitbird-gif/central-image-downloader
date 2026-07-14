@@ -6,7 +6,7 @@ Requirements: pip install flask requests Pillow
 Run:          python app.py
 Open:         http://localhost:5000
 """
-import io, re, time, json, zipfile, threading, os, sys, functools, platform, subprocess, tempfile
+import io, re, time, json, zipfile, threading, os, sys, functools, platform, subprocess, tempfile, base64
 from pathlib import Path
 from urllib.parse import unquote, quote, quote_plus, urlparse
 from queue import Queue, Empty
@@ -1024,14 +1024,18 @@ def get_zip(session_id):
     if not sess or not sess['images']:
         return 'ไม่พบไฟล์', 404
     fmt = sess.get('fmt', {})
+    # prefix จาก client เพื่อให้ชื่อไฟล์ในซิปตรงกับ setting (deterministic → เขียนทับได้
+    # ตอนแตก) ; ชื่อซิปภายนอกใส่ timestamp กันชนกัน (browser จะได้ไม่เติม (1)(2) ที่ตัวซิป)
+    prefix = re.sub(r'[<>:"/\\|?*]', '', request.args.get('prefix', ''))[:40]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
         for sku, img_bytes in sess['images'].items():
             ext = 'png' if fmt.get(sku) == 'png' else 'jpg'
-            zf.writestr(f'{sku}.{ext}', img_bytes)
+            zf.writestr(f'{prefix}{sku}.{ext}', img_bytes)
     buf.seek(0)
+    zipname = 'central_images_%s.zip' % time.strftime('%Y%m%d_%H%M%S')
     return send_file(buf, mimetype='application/zip',
-                     as_attachment=True, download_name='central_images.zip')
+                     as_attachment=True, download_name=zipname)
 
 @app.route('/img/<session_id>/<sku>')
 @require_auth
@@ -1354,15 +1358,266 @@ def dicut_ps_helper_zip():
     return send_file(buf, mimetype='application/zip', as_attachment=True,
                      download_name='dicut-ps-helper.zip')
 
+# ── Dicut PS Helper สำหรับ Windows — แจกจากหน้าเว็บ ─────────────────────────────
+# เครื่อง Windows อื่นที่มี Photoshop แต่ไม่ได้รันโปรแกรมเต็ม: กดปุ่ม Dicut PS แล้ว
+# ไม่เจอ helper → JS เสนอคำสั่ง PowerShell (iwr .../dicut-ps-helper.ps1 | iex) ติดตั้ง
+# helper จิ๋วที่ฟัง 127.0.0.1:5010 สั่ง Photoshop ผ่าน COM — เขียนด้วย PowerShell ล้วน
+# (TcpListener) จึง "ไม่ต้องลงอะไรเลย" นอกจาก Photoshop (Windows มี PowerShell ในตัว)
+# เปิดหน้าเว็บด้วย Chrome/Edge เท่านั้น (https→http://localhost ผ่านได้เฉพาะสองตัวนี้)
+
+_HELPER_PS1_WIN = r'''# Dicut PS Helper (Windows) - PowerShell only, no Python needed
+# Listens 127.0.0.1:5010, drives Photoshop COM removeBackground for the web button.
+$ErrorActionPreference = 'Stop'
+$PORT = 5010
+$HELPER_VERSION = 2
+
+function Test-PS { Test-Path 'Registry::HKEY_CLASSES_ROOT\Photoshop.Application' }
+
+function Get-AllowedOrigin($o) {
+    if (-not $o) { return $null }
+    try { $h = ([Uri]$o).Host.ToLower() } catch { return $null }
+    if ($h -in @('localhost','127.0.0.1','::1')) { return $o }
+    if ($h -like '10.*' -or $h -like '192.168.*') { return $o }
+    if ($h -match '^172\.(1[6-9]|2\d|3[01])\.') { return $o }
+    if ($h -like '*.onrender.com') { return $o }
+    return $null
+}
+
+function Invoke-RemoveBG([byte[]]$data) {
+    $tmp = [IO.Path]::GetTempPath()
+    $id  = [Guid]::NewGuid().ToString('N')
+    $isPng = ($data.Length -ge 4 -and $data[0] -eq 0x89 -and $data[1] -eq 0x50)
+    $src = Join-Path $tmp ("psin_$id." + $(if ($isPng) {'png'} else {'jpg'}))
+    $dst = Join-Path $tmp "psout_$id.png"
+    [IO.File]::WriteAllBytes($src, $data)
+    $srcJ = $src -replace '\\','/'
+    $dstJ = $dst -replace '\\','/'
+    $jsx = @"
+var _src=File("$srcJ");var _out=File("$dstJ");app.displayDialogs=DialogModes.NO;
+function fail(step,err){var msg=err&&err.message?err.message:String(err);var num=err&&err.number?(" #"+err.number):"";throw new Error("Dicut PS removeBackground failed at "+step+num+": "+msg);}
+var doc=null;
+try{
+ try{doc=app.open(_src);}catch(eOpen){fail("open",eOpen);}
+ try{if(doc.layers[0].isBackgroundLayer)doc.layers[0].isBackgroundLayer=false;doc.activeLayer=doc.layers[0];}catch(eLayer){fail("prepare layer",eLayer);}
+ try{executeAction(stringIDToTypeID('removeBackground'),undefined,DialogModes.NO);}catch(eRemove){fail("removeBackground",eRemove);}
+ try{var o=new PNGSaveOptions();doc.saveAs(_out,o,true,Extension.LOWERCASE);}catch(eSave){fail("save PNG",eSave);}
+}finally{if(doc)doc.close(SaveOptions.DONOTSAVECHANGES);}
+"@
+    try {
+        $ps = New-Object -ComObject Photoshop.Application
+        try { $ps.DisplayDialogs = 3 } catch {}
+        $ps.DoJavaScript($jsx) | Out-Null
+        $out = [IO.File]::ReadAllBytes($dst)
+        return $out
+    } finally {
+        Remove-Item $src,$dst -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Find-HeaderEnd([byte[]]$a, [int]$len) {
+    for ($i = 0; $i -le $len - 4; $i++) {
+        if ($a[$i] -eq 13 -and $a[$i+1] -eq 10 -and $a[$i+2] -eq 13 -and $a[$i+3] -eq 10) { return $i }
+    }
+    return -1
+}
+
+function Send-Response($stream, $code, $ctype, [byte[]]$body, $origin) {
+    $sb = "HTTP/1.1 $code`r`nContent-Type: $ctype`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n"
+    $ao = Get-AllowedOrigin $origin
+    if ($ao) { $sb += "Access-Control-Allow-Origin: $ao`r`nAccess-Control-Allow-Private-Network: true`r`nVary: Origin`r`n" }
+    $sb += "`r`n"
+    $hb = [Text.Encoding]::ASCII.GetBytes($sb)
+    $stream.Write($hb, 0, $hb.Length)
+    if ($body.Length) { $stream.Write($body, 0, $body.Length) }
+    $stream.Flush()
+}
+
+function Send-Json($stream, $code, $obj, $origin) {
+    $json = ($obj | ConvertTo-Json -Compress)
+    Send-Response $stream $code 'application/json' ([Text.Encoding]::UTF8.GetBytes($json)) $origin
+}
+
+$listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $PORT)
+$listener.Start()
+Write-Host "Dicut PS Helper (Windows) - http://127.0.0.1:$PORT (Photoshop: $(if (Test-PS) {'FOUND'} else {'NOT FOUND'}))"
+
+while ($true) {
+    $client = $listener.AcceptTcpClient()
+    try {
+        $ns = $client.GetStream()
+        $buf = New-Object System.Collections.Generic.List[byte]
+        $chunk = New-Object byte[] 8192
+        $headerEnd = -1
+        while ($true) {
+            $n = $ns.Read($chunk, 0, $chunk.Length)
+            if ($n -le 0) { break }
+            for ($i = 0; $i -lt $n; $i++) { $buf.Add($chunk[$i]) }
+            $arr = $buf.ToArray()
+            $headerEnd = Find-HeaderEnd $arr $arr.Length
+            if ($headerEnd -ge 0) { break }
+            if ($buf.Count -gt 65536) { break }   # abnormally long header
+        }
+        if ($headerEnd -lt 0) { $client.Close(); continue }
+        $arr = $buf.ToArray()
+        $headerText = [Text.Encoding]::ASCII.GetString($arr, 0, $headerEnd)
+        $lines = $headerText -split "`r`n"
+        $parts = $lines[0] -split ' '
+        $method = $parts[0]; $path = $parts[1]
+        $clen = 0; $origin = $null
+        foreach ($l in $lines) {
+            if ($l -match '^(?i)Content-Length:\s*(\d+)') { $clen = [int]$matches[1] }
+            if ($l -match '^(?i)Origin:\s*(.+)$') { $origin = $matches[1].Trim() }
+        }
+
+        if ($method -eq 'OPTIONS') {
+            Send-Response $ns '200 OK' 'text/plain' ([byte[]]@()) $origin
+            $client.Close(); continue
+        }
+        if ($method -eq 'GET' -and $path -eq '/has-ps') {
+            Send-Json $ns '200 OK' @{ available = [bool](Test-PS); version = $HELPER_VERSION } $origin
+            $client.Close(); continue
+        }
+        if ($method -eq 'POST' -and $path -eq '/ps-remove-bg') {
+            if ($clen -le 0 -or $clen -gt 41943040) {
+                Send-Json $ns '413 Payload Too Large' @{ ok = $false; error = 'bad size' } $origin
+                $client.Close(); continue
+            }
+            $bodyStart = $headerEnd + 4
+            $body = New-Object byte[] $clen
+            $already = $arr.Length - $bodyStart
+            if ($already -gt 0) { [Array]::Copy($arr, $bodyStart, $body, 0, [Math]::Min($already, $clen)) }
+            $read = [Math]::Min([Math]::Max($already,0), $clen)
+            while ($read -lt $clen) {
+                $n = $ns.Read($body, $read, $clen - $read)
+                if ($n -le 0) { break }
+                $read += $n
+            }
+            $okImg = ($body.Length -ge 3 -and (($body[0] -eq 0x89 -and $body[1] -eq 0x50) -or ($body[0] -eq 0xFF -and $body[1] -eq 0xD8 -and $body[2] -eq 0xFF)))
+            if (-not $okImg) {
+                Send-Json $ns '415 Unsupported Media Type' @{ ok = $false; error = 'not an image' } $origin
+                $client.Close(); continue
+            }
+            try {
+                $png = Invoke-RemoveBG $body
+                Send-Response $ns '200 OK' 'image/png' $png $origin
+            } catch {
+                Send-Json $ns '500 Internal Server Error' @{ ok = $false; error = "$($_.Exception.Message)" } $origin
+            }
+            $client.Close(); continue
+        }
+        Send-Json $ns '404 Not Found' @{ error = 'not found' } $origin
+        $client.Close()
+    } catch {
+        try { $client.Close() } catch {}
+    }
+}
+'''
+
+def _win_installer_ps1():
+    """สคริปต์ PowerShell ติดตั้ง Windows helper — เรียกผ่าน iwr ... | iex
+    วาง helper.ps1, ตั้ง auto-start ตอน login (Startup .cmd), รันเลย, แล้ว poll
+    ไม่ต้องมี Python — ใช้ PowerShell ที่ติดมากับ Windows"""
+    helper_b64 = base64.b64encode(_HELPER_PS1_WIN.encode('utf-8')).decode('ascii')
+    return r'''
+$ErrorActionPreference = 'Stop'
+Write-Host '=============================================='
+Write-Host '  ติดตั้ง Dicut PS Helper (Windows)'
+Write-Host '=============================================='
+
+if (-not (Test-Path 'Registry::HKEY_CLASSES_ROOT\Photoshop.Application')) {
+    Write-Host 'ไม่พบ Photoshop ในเครื่องนี้ — ติดตั้ง Photoshop ก่อนแล้วรันใหม่' -ForegroundColor Red
+    return
+}
+Write-Host 'พบ Photoshop: OK'
+
+$dir = Join-Path $env:APPDATA 'Dicut PS Helper'
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$helperPath = Join-Path $dir 'dicut_ps_helper.ps1'
+$b64 = '__HELPER_B64__'
+[IO.File]::WriteAllBytes($helperPath, [Convert]::FromBase64String($b64))
+Write-Host "วางไฟล์ helper ที่ $helperPath"
+
+# auto-start ตอน login — วาง .cmd ใน Startup folder (รัน PowerShell ซ่อน ถ้ายังไม่รัน)
+$startup = [Environment]::GetFolderPath('Startup')
+$runnerCmd = Join-Path $startup 'Dicut PS Helper.cmd'
+$runnerBody = @"
+@echo off
+powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "try{(New-Object Net.Sockets.TcpClient('127.0.0.1',5010)).Close()}catch{Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File','$helperPath'}"
+"@
+Set-Content -LiteralPath $runnerCmd -Value $runnerBody -Encoding OEM
+Write-Host 'ตั้งค่าเปิดอัตโนมัติตอนเข้าเครื่องแล้ว'
+
+# หยุดตัวเก่า (ถ้ามี) แล้วรันใหม่เบื้องหลัง
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*dicut_ps_helper.ps1*' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',$helperPath
+
+$ok = $false
+for ($i=0; $i -lt 12; $i++) {
+    Start-Sleep -Seconds 1
+    try {
+        $r = Invoke-RestMethod -Uri 'http://127.0.0.1:5010/has-ps' -TimeoutSec 2
+        if ($r.available) { $ok = $true; break }
+    } catch {}
+}
+Write-Host ''
+if ($ok) {
+    Write-Host 'สำเร็จ! กลับไปหน้าเว็บ (Chrome/Edge) แล้วกดปุ่ม Dicut PS ได้เลย' -ForegroundColor Green
+} else {
+    Write-Host 'helper ยังไม่ตอบ — ลองรันไฟล์นี้ด้วยตนเอง:' -ForegroundColor Yellow
+    Write-Host "  $helperPath"
+}
+'''.replace('__HELPER_B64__', helper_b64)
+
+
+@app.route('/dicut-ps-helper.ps1')
+def dicut_ps_helper_ps1():
+    """ตัวติดตั้ง Windows — เรียกผ่าน `iwr .../dicut-ps-helper.ps1 | iex`"""
+    resp = app.make_response(_win_installer_ps1())
+    resp.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    return resp
+
 # ── Dicut PS endpoints ─────────────────────────────────────────────────────────
 # /has-ps + /ps-remove-bg ต้องมี CORS เพราะหน้าเว็บที่เปิดผ่าน LAN (origin
 # http://10.x.x.x:5000) จะ fetch ข้าม origin มาที่ http://localhost:5000 ของตัวเอง
 
+def _origin_allowed(origin):
+    """คืน origin เดิมถ้าได้รับอนุญาต (echo กลับใน CORS header) มิฉะนั้นคืน None.
+    เดิมส่ง '*' ให้ทุก origin → เว็บไซต์ใดก็สั่ง Photoshop ในเครื่องผู้ใช้ได้.
+    อนุญาตเฉพาะ: localhost, วง LAN ส่วนตัว (RFC1918), โดเมนแอปเราบน Render,
+    และค่า APP_PUBLIC_ORIGIN ที่ตั้งผ่าน env."""
+    if not origin:
+        return None
+    try:
+        host = (urlparse(origin).hostname or '').lower()
+    except Exception:
+        return None
+    if not host:
+        return None
+    if host in ('localhost', '127.0.0.1', '::1'):
+        return origin
+    if host.startswith('10.') or host.startswith('192.168.'):
+        return origin
+    if re.match(r'172\.(1[6-9]|2\d|3[01])\.', host):
+        return origin
+    if host.endswith('.onrender.com'):
+        return origin
+    if origin == os.environ.get('APP_PUBLIC_ORIGIN', ''):
+        return origin
+    return None
+
+def _apply_cors(resp):
+    allowed = _origin_allowed(request.headers.get('Origin'))
+    if allowed:
+        resp.headers['Access-Control-Allow-Origin'] = allowed
+        resp.headers['Vary'] = 'Origin'
+    return resp
+
 def _cors_json(data, code=200):
     resp = app.make_response((json.dumps(data), code))
     resp.headers['Content-Type'] = 'application/json'
-    resp.headers['Access-Control-Allow-Origin'] = '*'
-    return resp
+    return _apply_cors(resp)
 
 @app.route('/has-ps')
 def has_ps():
@@ -1374,10 +1629,9 @@ def ps_remove_bg():
     รับเฉพาะจาก localhost — เครื่อง LAN ให้ browser ยิงมาที่ instance ของตัวเอง"""
     if request.method == 'OPTIONS':
         resp = app.make_response('')
-        resp.headers['Access-Control-Allow-Origin'] = '*'
         resp.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
         resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-        return resp
+        return _apply_cors(resp)
     if not _request_is_local():
         return _cors_json({'ok': False, 'error': 'localhost เท่านั้น'}, 403)
     if not has_photoshop():
@@ -1386,8 +1640,7 @@ def ps_remove_bg():
         png = ps_remove_bg_bytes(request.get_data())
         resp = app.make_response(png)
         resp.headers['Content-Type'] = 'image/png'
-        resp.headers['Access-Control-Allow-Origin'] = '*'
-        return resp
+        return _apply_cors(resp)
     except Exception as e:
         return _cors_json({'ok': False, 'error': str(e)}, 500)
 
@@ -1991,6 +2244,49 @@ fetch('/has-ai').then(r=>r.json()).then(d=>{
 }).catch(()=>{ document.getElementById('dicut-ai-col').style.display='none'; });
 let savedSkus=new Set(), loadedSkus=[], notFoundSkus=[], lastFolder='', startTime=0;
 let abortCtrl=null, dicutRunning=false;
+let savingSkus=new Set();   // กันเขียนซ้ำระหว่าง save ยังไม่จบ
+const supportsDirPicker=!!window.showDirectoryPicker;
+
+// ---------- โฟลเดอร์ที่ผู้ใช้เลือก (remote) เก็บถาวรใน IndexedDB ----------
+// FileSystemDirectoryHandle serialize เก็บได้ → เลือกครั้งเดียวใช้ได้ข้าม reload
+function _idb(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('cid_fs',1);
+    r.onupgradeneeded=()=>r.result.createObjectStore('h');
+    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+  });
+}
+async function idbSaveHandle(h){
+  try{ const db=await _idb(); await new Promise((res,rej)=>{
+    const tx=db.transaction('h','readwrite'); tx.objectStore('h').put(h,'dir');
+    tx.oncomplete=res; tx.onerror=()=>rej(tx.error); }); }catch(e){}
+}
+async function idbLoadHandle(){
+  try{ const db=await _idb(); return await new Promise((res)=>{
+    const rq=db.transaction('h','readonly').objectStore('h').get('dir');
+    rq.onsuccess=()=>res(rq.result||null); rq.onerror=()=>res(null); }); }catch(e){ return null; }
+}
+async function idbClearHandle(){
+  try{ const db=await _idb(); await new Promise((res)=>{
+    const tx=db.transaction('h','readwrite'); tx.objectStore('h').delete('dir');
+    tx.oncomplete=res; tx.onerror=res; }); }catch(e){}
+}
+// คืน true เมื่อมีสิทธิ์เขียนแล้ว; false เมื่อต้องให้ผู้ใช้กดอนุญาต (จาก user gesture)
+async function ensureRemotePermission(interactive){
+  if(!remoteDirHandle) return false;
+  const opt={mode:'readwrite'};
+  try{
+    if(await remoteDirHandle.queryPermission(opt)==='granted') return true;
+    if(interactive) return (await remoteDirHandle.requestPermission(opt))==='granted';
+  }catch(e){}
+  return false;
+}
+function showReauth(){
+  const b=document.getElementById('remote-folder-button');
+  if(b){ b.textContent='⚠ อนุญาต Folder อีกครั้ง'; }
+  const n=document.getElementById('remote-folder-name');
+  if(n){ n.textContent='⚠ สิทธิ์เขียน Folder หมด — กดปุ่มเพื่ออนุญาตใหม่'; }
+}
 
 // ---------- init ----------
 fetch('/is-local').then(r=>r.json()).then(d=>{
@@ -2000,10 +2296,24 @@ fetch('/is-local').then(r=>r.json()).then(d=>{
     const inp=document.getElementById('folder-input'); if(!inp.value) inp.value=d2.folder; loadSettings();
   }); } else {
     loadSettings();
-    if(!window.showDirectoryPicker){
-      document.getElementById('remote-folder-button').textContent='📥 วิธีตั้ง Folder';
-      document.getElementById('remote-folder-help').textContent='Brave ปิดระบบเลือก Folder ของเว็บ: ตั้งโฟลเดอร์ดาวน์โหลดที่ brave://settings/downloads หรือใช้ Chrome/Edge';
-      document.getElementById('save-toggle-label').textContent='💾 ดาวน์โหลดภาพอัตโนมัติลง Downloads เมื่อโหลดเสร็จ';
+    if(!supportsDirPicker){
+      // Safari/Firefox/Brave: เลือกโฟลเดอร์+เขียนทับไม่ได้ → ใช้ "บันทึก ZIP" เป็นโหมดหลัก
+      document.getElementById('remote-folder-button').style.display='none';
+      document.getElementById('remote-folder-help').textContent='เบราว์เซอร์นี้บันทึกตรงเข้า Folder ไม่ได้ — โหลดเสร็จแล้วกดปุ่ม 📦 บันทึก ZIP ทีเดียว (ชื่อไฟล์ในซิปถูกต้อง เขียนทับได้ตอนแตก) หรือเปิดด้วย Chrome/Edge เพื่อบันทึกตรง';
+      document.getElementById('remote-folder-name').textContent='ใช้ปุ่ม 📦 บันทึก ZIP';
+      document.getElementById('save-toggle-label').textContent='💾 เตรียมภาพให้พร้อมกด 📦 บันทึก ZIP เมื่อโหลดเสร็จ';
+    } else {
+      // Chrome/Edge: กู้โฟลเดอร์ที่เคยเลือกไว้จาก IndexedDB (ไม่ต้องเลือกใหม่ทุก reload)
+      idbLoadHandle().then(async h=>{
+        if(!h) return;
+        remoteDirHandle=h;
+        const nm=document.getElementById('remote-folder-name');
+        if(await ensureRemotePermission(false)){
+          if(nm) nm.textContent='✅ '+h.name+' (บันทึกตรงเข้า Folder นี้)';
+        } else {
+          if(nm) nm.textContent='📁 '+h.name+' — กดปุ่มเพื่ออนุญาตเขียนอีกครั้ง';
+        }
+      });
     }
   }
 });
@@ -2123,24 +2433,32 @@ function resetFolder(){ document.getElementById('folder-input').value=''; docume
 function getPrefix(){ return document.getElementById('prefix-input').value.replace(/[<>:"/\\\\|?*]/g,'').slice(0,40); }
 
 async function browseRemoteFolder(){
-  if(!window.showDirectoryPicker){
-    const brave=!!navigator.brave;
+  if(!supportsDirPicker){
     const nl=String.fromCharCode(10);
-    alert(brave
-      ? ['Brave ปิดระบบเลือก Folder ของเว็บไว้','','ตั้งโฟลเดอร์ที่ brave://settings/downloads หรือเปิดเว็บนี้ด้วย Chrome/Edge','ไฟล์ยังดาวน์โหลดลง Downloads และปุ่มบันทึก ZIP ใช้ได้ตามปกติ'].join(nl)
-      : ['เบราว์เซอร์นี้ไม่รองรับการเลือก Folder โดยตรง','','ระบบจะดาวน์โหลดลง Downloads แทน หรือเปิดเว็บนี้ด้วย Chrome/Edge'].join(nl));
+    alert(['เบราว์เซอร์นี้บันทึกตรงเข้า Folder ไม่ได้','','โหลดเสร็จแล้วกดปุ่ม 📦 บันทึก ZIP ทีเดียว — ชื่อไฟล์ในซิปถูกต้องเขียนทับได้ตอนแตก','หรือเปิดเว็บนี้ด้วย Chrome/Edge เพื่อบันทึกตรงเข้า Folder'].join(nl));
     return;
+  }
+  // ถ้ามี handle เดิมแต่สิทธิ์หมด — ขออนุญาตใหม่ก่อน (ไม่ต้องเลือกโฟลเดอร์ซ้ำ)
+  if(remoteDirHandle && !(await ensureRemotePermission(false))){
+    if(await ensureRemotePermission(true)){
+      document.getElementById('remote-folder-button').textContent='📁 เลือก Folder';
+      document.getElementById('remote-folder-name').textContent='✅ '+remoteDirHandle.name+' (บันทึกตรงเข้า Folder นี้)';
+      document.getElementById('folder-hint').textContent='อนุญาตแล้ว ภาพใหม่จะบันทึกตรงเข้า Folder นี้';
+      return;
+    }
   }
   try{
     remoteDirHandle=await window.showDirectoryPicker({mode:'readwrite'});
-    document.getElementById('remote-folder-name').textContent='✅ '+remoteDirHandle.name;
+    await idbSaveHandle(remoteDirHandle);   // จำไว้ข้าม reload
+    document.getElementById('remote-folder-button').textContent='📁 เลือก Folder';
+    document.getElementById('remote-folder-name').textContent='✅ '+remoteDirHandle.name+' (บันทึกตรงเข้า Folder นี้)';
     document.getElementById('folder-hint').textContent='เลือก Folder แล้ว ภาพใหม่จะบันทึกตรงเข้า Folder นี้';
   }catch(e){ if(e.name!=='AbortError') alert('เลือก Folder ไม่สำเร็จ: '+e.message); }
 }
 
 async function saveBlobToRemoteFolder(blob,filename){
   const fh=await remoteDirHandle.getFileHandle(filename,{create:true});
-  const wr=await fh.createWritable();
+  const wr=await fh.createWritable();   // เปิดชื่อเดิม = เขียนทับ ไม่เกิด (1)(2)
   try{ await wr.write(blob); } finally { await wr.close(); }
 }
 
@@ -2166,26 +2484,39 @@ function clearAll(){
 }
 
 // ---------- auto-save ----------
+let remoteZipHint=false;   // true = browser นี้ให้ผู้ใช้กด ZIP เอง (ไม่ save ตรง)
 async function autoDownloadImage(sid,sku){
-  if(!autoSave||savedSkus.has(sku)) return; savedSkus.add(sku);
-  if(isLocal){
-    const folder=document.getElementById('folder-input').value.trim(); if(!folder) return;
-    lastFolder=folder;
-    const d=await (await fetch('/save-folder',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({session_id:sid,sku,folder,prefix:getPrefix()})})).json();
-    if(!d.ok) log('  ⚠ บันทึก '+sku+' ล้มเหลว: '+d.error,'c-warn');
-  } else {
-    // Hosted/LAN: save through the browser-selected directory when supported.
+  // FIX: เดิม savedSkus.add ก่อนรู้ผล → เขียนล้มแล้วไม่ถูกลองใหม่ ตอนนี้ add หลังสำเร็จ
+  if(!autoSave||savedSkus.has(sku)||savingSkus.has(sku)) return;
+  savingSkus.add(sku);
+  try{
+    if(isLocal){
+      const folder=document.getElementById('folder-input').value.trim(); if(!folder) return;
+      lastFolder=folder;
+      const d=await (await fetch('/save-folder',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({session_id:sid,sku,folder,prefix:getPrefix()})})).json();
+      if(d.ok) savedSkus.add(sku);
+      else log('  ⚠ บันทึก '+sku+' ล้มเหลว: '+d.error,'c-warn');
+      return;
+    }
+    // ── Hosted/LAN ──
+    if(!supportsDirPicker || !remoteDirHandle){
+      // Safari/Firefox (ไม่รองรับ) หรือ Chrome/Edge ที่ยังไม่เลือกโฟลเดอร์:
+      // อย่าดาวน์โหลดทีละไฟล์ (browser จะเติม (1)(2)) — ให้ผู้ใช้กด 📦 บันทึก ZIP ทีเดียว
+      remoteZipHint=true; return;
+    }
     const ext=document.getElementById('img-format').value;
-    try{ const blob=await (await fetch(`/img/${sid}/${sku}`)).blob();
-      if(remoteDirHandle){
-        await saveBlobToRemoteFolder(blob,getPrefix()+sku+'.'+ext); return;
-      }
-      const url=URL.createObjectURL(blob); const a=document.createElement('a');
-      a.href=url; a.download=getPrefix()+sku+'.'+ext; document.body.appendChild(a); a.click();
-      setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},800);
-    }catch(e){ log('  ⚠ ดาวน์โหลด '+sku+' ล้มเหลว','c-warn'); }
-  }
+    try{
+      if(!(await ensureRemotePermission(false))){ showReauth(); return; }
+      const blob=await (await fetch(`/img/${sid}/${sku}`)).blob();
+      await saveBlobToRemoteFolder(blob,getPrefix()+sku+'.'+ext);
+      savedSkus.add(sku);
+    }catch(e){
+      // สิทธิ์หมด/เขียนล้ม → ล้าง handle โชว์ปุ่มขออนุญาตใหม่ ไม่เงียบตกไป <a download>
+      remoteDirHandle=null; await idbClearHandle(); showReauth();
+      log('  ⚠ บันทึก '+sku+' ล้มเหลว: '+(e.message||e)+' — กดปุ่มอนุญาต Folder อีกครั้ง หรือใช้ 📦 บันทึก ZIP','c-warn');
+    }
+  } finally { savingSkus.delete(sku); }
 }
 
 // ---------- image grid + per-card order ----------
@@ -2397,6 +2728,12 @@ function onDone(msg){
     const sp=document.getElementById('save-path'); sp.style.display='flex';
     sp.innerHTML=`💾 บันทึกที่ <b>${lastFolder}</b> <button class="btn-secondary" style="padding:4px 12px;font-size:.8rem" onclick="openSavedFolder()">📂 เปิดโฟลเดอร์</button>`;
   }
+  // เตือนให้กด ZIP เมื่อ browser บันทึกตรงไม่ได้/ยังไม่เลือกโฟลเดอร์
+  if(autoSave && !isLocal && remoteZipHint){
+    const sp=document.getElementById('save-path'); sp.style.display='flex';
+    sp.innerHTML='📦 เบราว์เซอร์นี้บันทึกตรงเข้า Folder ไม่ได้ — กดปุ่ม <b>บันทึก ZIP</b> เพื่อได้ไฟล์ครบชื่อถูกต้อง (Chrome/Edge เลือก Folder แล้วบันทึกตรงได้)';
+    remoteZipHint=false;
+  }
   endDownloadUI();
   toast(`เสร็จแล้ว ✅ ${ok}/${total}`+(msg.not_found.length?` · ไม่พบ ${msg.not_found.length}`:''));
 }
@@ -2442,18 +2779,32 @@ async function dicutAll(method){
     }
     if(!psOk){
       const isMac=/Macintosh|Mac OS X/i.test(navigator.userAgent);
-      if(!isMac){ alert('ใช้ Dicut PS ไม่ได้ — ไม่พบ Photoshop หรือตัวช่วยในเครื่องนี้'); return; }
-      // Mac ยังไม่มีตัวช่วย → ให้คัดลอกคำสั่งไปวางใน Terminal ครั้งเดียว
-      // (แจกเป็นไฟล์ .command ไม่ได้แล้ว — macOS Sequoia บล็อกไฟล์ที่โหลดมาแบบ
-      //  ไม่มีปุ่มยอม แต่ curl|bash ไม่โดน quarantine เพราะไม่มีไฟล์ลงเครื่อง)
-      const cmd=`curl -fsSL "${location.origin}/dicut-ps-helper.sh" | bash`;
-      prompt('ยังไม่ได้ติดตั้งตัวช่วย Dicut PS ในเครื่องนี้\\n'
-        +'(ปุ่มนี้ใช้ Photoshop ของเครื่องคุณเอง — ต้องมี Photoshop ติดตั้งอยู่)\\n\\n'
-        +'ติดตั้งครั้งเดียวใช้ได้ถาวร:\\n'
-        +'1) คัดลอกคำสั่งข้างล่างนี้ (Cmd+C)\\n'
-        +'2) เปิดแอป Terminal → วาง (Cmd+V) → กด Enter\\n'
-        +'3) กลับมากดปุ่ม Dicut PS อีกครั้ง', cmd);
-      return; }
+      const isWin=/Windows/i.test(navigator.userAgent);
+      if(isMac){
+        // Mac ยังไม่มีตัวช่วย → คัดลอกคำสั่งไปวางใน Terminal ครั้งเดียว
+        // (แจกเป็นไฟล์ .command ไม่ได้แล้ว — macOS Sequoia บล็อกไฟล์ที่โหลดมาแบบ
+        //  ไม่มีปุ่มยอม แต่ curl|bash ไม่โดน quarantine เพราะไม่มีไฟล์ลงเครื่อง)
+        const cmd=`curl -fsSL "${location.origin}/dicut-ps-helper.sh" | bash`;
+        prompt('ยังไม่ได้ติดตั้งตัวช่วย Dicut PS ในเครื่องนี้\\n'
+          +'(ปุ่มนี้ใช้ Photoshop ของเครื่องคุณเอง — ต้องมี Photoshop ติดตั้งอยู่)\\n\\n'
+          +'⚠ บน Mac ต้องเปิดเว็บนี้ด้วย Chrome หรือ Edge (Safari เรียก localhost ไม่ได้)\\n\\n'
+          +'ติดตั้งครั้งเดียวใช้ได้ถาวร:\\n'
+          +'1) คัดลอกคำสั่งข้างล่างนี้ (Cmd+C)\\n'
+          +'2) เปิดแอป Terminal → วาง (Cmd+V) → กด Enter\\n'
+          +'3) กลับมากดปุ่ม Dicut PS อีกครั้ง', cmd);
+        return; }
+      if(isWin){
+        // Windows: helper จิ๋วผ่าน PowerShell (ต้องมี Python 3 + Photoshop ในเครื่อง)
+        const cmd=`powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr '${location.origin}/dicut-ps-helper.ps1' -UseBasicParsing | iex"`;
+        prompt('ยังไม่ได้ติดตั้งตัวช่วย Dicut PS ในเครื่องนี้\\n'
+          +'(ปุ่มนี้ใช้ Photoshop ของเครื่องคุณเอง — ขอแค่มี Photoshop ติดตั้งอยู่ ไม่ต้องลงอย่างอื่น)\\n\\n'
+          +'⚠ เปิดเว็บนี้ด้วย Chrome หรือ Edge เท่านั้น\\n\\n'
+          +'ติดตั้งครั้งเดียวใช้ได้ถาวร:\\n'
+          +'1) คัดลอกคำสั่งข้างล่างนี้ (Ctrl+C)\\n'
+          +'2) กดปุ่ม Windows → พิมพ์ PowerShell → เปิด → วาง (Ctrl+V) → Enter\\n'
+          +'3) กลับมากดปุ่ม Dicut PS อีกครั้ง', cmd);
+        return; }
+      alert('ใช้ Dicut PS ไม่ได้ — ไม่พบ Photoshop หรือตัวช่วยในเครื่องนี้'); return; }
   }
   // ทำเฉพาะ SKU ที่ "ไม่ได้ล็อก" — SKU ที่ล็อกไว้จะคงรูปเดิม (dicut/ai/ต้นฉบับ ตามที่เลือกไว้)
   const targets=loadedSkus.filter(sku=>{
@@ -2531,13 +2882,15 @@ async function downloadZip(){
       else alert('บันทึกล้มเหลว: '+d.error);
     }catch(e){ alert('เกิดข้อผิดพลาด: '+e.message); }
   } else {
-    try{ const blob=await (await fetch('/zip/'+sessionId)).blob();
-      if(remoteDirHandle){
-        await saveBlobToRemoteFolder(blob,'central_images.zip');
+    const qs='/zip/'+sessionId+'?prefix='+encodeURIComponent(getPrefix());
+    const zipname='central_images_'+new Date().toISOString().slice(0,19).replace(/[-:T]/g,'').replace(/(\\d{8})(\\d{6})/,'$1_$2')+'.zip';
+    try{ const blob=await (await fetch(qs)).blob();
+      if(remoteDirHandle && await ensureRemotePermission(true)){
+        await saveBlobToRemoteFolder(blob,zipname);
         toast('บันทึก ZIP ลง '+remoteDirHandle.name+' สำเร็จ'); return;
       }
       const url=URL.createObjectURL(blob); const a=document.createElement('a');
-      a.href=url; a.download='central_images.zip'; document.body.appendChild(a); a.click();
+      a.href=url; a.download=zipname; document.body.appendChild(a); a.click();
       setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},2000);
     }catch(e){ alert('ดาวน์โหลด ZIP ล้มเหลว: '+e.message); }
   }
