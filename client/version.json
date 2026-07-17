@@ -1,13 +1,19 @@
 {
-  "version": "beta 1.0",
+  "version": "beta 1.1",
   "date": "2026-07-17",
-  "hash": "df0ba70",
+  "hash": "412e2d7",
   "renderer": "browser",
   "changes": [
-    "ล็อคตำแหน่ง header และเมนู Central Creative Tools ให้ตรงกับ Overlay และ Strip Banner",
-    "เพิ่ม Git version, changelog และ version modal ในรูปแบบเดียวกับ Overlay"
+    "ปรับปุ่มเวอร์ชันและหน้าต่าง มีอะไรใหม่ ให้ใช้ UI เดียวกับ Overlay Generator"
   ],
   "changelog": [
+    {
+      "version": "beta 1.1",
+      "date": "2026-07-17",
+      "changes": [
+        "ปรับปุ่มเวอร์ชันและหน้าต่าง มีอะไรใหม่ ให้ใช้ UI เดียวกับ Overlay Generator"
+      ]
+    },
     {
       "version": "beta 1.0",
       "date": "2026-07-17",
