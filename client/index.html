@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="th" data-feedback-tool="Image Downloader">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="ดาวน์โหลดและจัดการรูปสินค้าจาก Central ด้วยรหัส SKU ในเบราว์เซอร์">
+  <title>Central Image Downloader</title>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="feedback-widget.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="suite-brand">
+      <span class="suite-kicker">Central Creative Tools <button id="buildVersion" type="button" title="ดูว่าเวอร์ชันนี้อัปเดตอะไร" style="font-size:11px;opacity:.6;font-weight:400;background:none;border:none;color:inherit;cursor:pointer;padding:0 2px;text-decoration:underline dotted">v</button></span>
+      <h1>Image Downloader</h1>
+      <p>โหลดรูปสินค้าจาก central.co.th ด้วยรหัส SKU</p>
+    </div>
+    <nav class="tool-nav" aria-label="Central Creative Tools">
+      <span class="tool-link active" aria-current="page">Image Downloader</span>
+      <a class="tool-link" data-tool-link href="https://central-strip-banner.pages.dev/">Strip Banner</a>
+      <a class="tool-link" data-tool-link href="https://central-overlay-generator.pages.dev/">Overlay Generator</a>
+      <button class="theme-button" id="theme-button" type="button"><span class="theme-icon" id="theme-icon" aria-hidden="true"><svg class="theme-icon-svg theme-icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"></path></svg><svg class="theme-icon-svg theme-icon-moon" viewBox="0 0 24 24"><path d="M20 15.2A8.5 8.5 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z"></path></svg></span><span>ธีม</span></button>
+    </nav>
+  </header>
+
+  <div id="versionModal" class="version-modal" aria-hidden="true">
+    <section class="version-dialog" role="dialog" aria-modal="true" aria-labelledby="versionTitle">
+      <div class="version-head">
+        <div>
+          <h2 id="versionTitle">Central Image Downloader</h2>
+          <p>Beta version, changelog และ renderer status สำหรับงานรอบนี้</p>
+        </div>
+        <button id="versionClose" class="version-close" type="button" aria-label="ปิด">×</button>
+      </div>
+      <div class="version-body">
+        <div class="version-meta" id="versionMeta"></div>
+        <ul class="version-list" id="versionList"></ul>
+      </div>
+    </section>
+  </div>
+
+  <main class="container">
+    <section class="panel intake-panel">
+      <div class="section-title">
+        <h2>📋 รหัส SKU</h2>
+        <span class="client-badge">CLIENT-SIDE</span>
+      </div>
+
+      <label class="sr-only" for="sku-input">รหัส SKU</label>
+      <textarea id="sku-input" spellcheck="false" placeholder="วางรหัส SKU ที่นี่ คั่นด้วยช่องว่าง หรือ Enter (ลากไฟล์ .txt / .csv มาวางได้)&#10;เช่น CDS10268964 CDS10268995 GRCDS53725060025"></textarea>
+
+      <div class="control-row">
+        <button class="button primary" id="download-button" type="button">⬇ Download</button>
+        <button class="button stop hidden" id="stop-button" type="button">⏹ หยุด</button>
+
+        <label class="compact-field">รูปเริ่มต้น
+          <select id="image-index"></select>
+        </label>
+
+        <label class="compact-field">ไฟล์
+          <select id="image-format">
+            <option value="jpg">JPEG (q100)</option>
+            <option value="png">PNG</option>
+          </select>
+        </label>
+
+        <button class="button secondary" id="clear-button" type="button">🗑 ล้าง</button>
+        <span class="live-count">พบ <strong id="sku-count">0</strong> SKU · ไม่จำกัด (แนะนำไม่เกิน 100 SKU/รอบ)</span>
+      </div>
+      <div id="batch-advisory" class="batch-advisory hidden" role="status" aria-live="polite"></div>
+
+      <div class="progress-track" aria-hidden="true"><div id="progress-bar"></div></div>
+      <div class="progress-label" id="progress-label" aria-live="polite"></div>
+
+      <div id="history" class="history"></div>
+
+      <div class="save-settings">
+        <label class="toggle-row">
+          <input type="checkbox" id="auto-save">
+          <span id="auto-save-label">💾 บันทึกภาพอัตโนมัติเมื่อโหลดเสร็จ</span>
+        </label>
+
+        <div id="folder-settings" class="folder-settings hidden">
+          <div class="folder-row">
+            <button class="button secondary" id="folder-button" type="button">📁 เลือก Folder</button>
+            <span id="folder-name" class="folder-name">ยังไม่ได้เลือก Folder</span>
+          </div>
+          <p id="folder-help" class="hint">เลือกโฟลเดอร์ย่อย เช่น Documents\central — Chrome/Edge เท่านั้น</p>
+          <div class="prefix-row">
+            <label class="compact-field">คำนำหน้าชื่อไฟล์
+              <input id="prefix-input" type="text" maxlength="40" placeholder="เช่น KV_">
+            </label>
+            <span class="hint">ตัวอย่าง: <code id="prefix-example">CDS123.jpg</code></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel results-panel hidden" id="results-panel">
+      <h2>📊 ผลลัพธ์</h2>
+      <div id="summary" class="summary"></div>
+      <div id="summary-actions" class="summary-actions"></div>
+      <div id="log" class="log" aria-live="polite"></div>
+    </section>
+
+    <section class="panel images-panel hidden" id="images-panel">
+      <div class="images-heading">
+        <h2>🖼 รูปภาพที่ดาวน์โหลด</h2>
+        <button class="button success" id="zip-button-top" type="button">📦 บันทึก ZIP</button>
+      </div>
+
+      <div class="batch-tools" id="batch-tools">
+        <div>
+          <button class="button trim" data-batch-action="trim" type="button">🔲 Trim</button>
+          <small>ตัดขอบให้พอดีตัวสินค้า</small>
+        </div>
+        <div>
+          <button class="button dicut" data-batch-action="dicut" type="button">✂️ Dicut</button>
+          <small>ลบพื้นหลังขาวและ trim</small>
+        </div>
+        <div>
+          <button class="button secondary" data-batch-action="reset" type="button">↺ ต้นฉบับ</button>
+          <small>คืนรูปเดิมทุกใบ</small>
+        </div>
+        <span id="process-status" class="process-status"></span>
+      </div>
+
+      <div id="image-grid" class="image-grid"></div>
+      <p class="zip-warning">แนะนำไม่เกิน 100 SKU/รอบ — PNG, Dicut และ ZIP ใช้ RAM มากกว่า JPEG; จำนวนมากบนเครื่องแรมน้อยอาจช้าหรือค้าง</p>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status"></div>
+  <div class="lightbox hidden" id="lightbox" role="dialog" aria-modal="true" aria-label="ดูรูปขนาดใหญ่">
+    <button id="lightbox-close" type="button" aria-label="ปิด">×</button>
+    <img id="lightbox-image" alt="">
+  </div>
+
+  <script id="cid-version-data" type="application/json">{"version":"beta 1.0","date":"2026-07-17","hash":"dev","renderer":"browser","changes":["ล็อคตำแหน่ง header และเมนู Central Creative Tools ให้ตรงกับ Overlay และ Strip Banner","เพิ่ม Git version, changelog และ version modal ในรูปแบบเดียวกับ Overlay"],"changelog":[{"version":"beta 1.0","date":"2026-07-17","changes":["ล็อคตำแหน่ง header และเมนู Central Creative Tools ให้ตรงกับ Overlay และ Strip Banner","เพิ่ม Git version, changelog และ version modal ในรูปแบบเดียวกับ Overlay"]}]}</script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script src="feedback-widget.js"></script>
+</body>
+</html>
