@@ -24,19 +24,11 @@
     </nav>
   </header>
 
-  <div id="versionModal" class="version-modal" aria-hidden="true">
-    <section class="version-dialog" role="dialog" aria-modal="true" aria-labelledby="versionTitle">
-      <div class="version-head">
-        <div>
-          <h2 id="versionTitle">Central Image Downloader</h2>
-          <p>Beta version, changelog และ renderer status สำหรับงานรอบนี้</p>
-        </div>
-        <button id="versionClose" class="version-close" type="button" aria-label="ปิด">×</button>
-      </div>
-      <div class="version-body">
-        <div class="version-meta" id="versionMeta"></div>
-        <ul class="version-list" id="versionList"></ul>
-      </div>
+  <div id="versionModal" class="version-modal" role="dialog" aria-modal="true" aria-labelledby="versionTitle" aria-hidden="true">
+    <section class="version-dialog">
+      <strong id="versionTitle">มีอะไรใหม่</strong>
+      <div class="version-body" id="versionBody"></div>
+      <div class="version-actions"><button id="versionClose" class="version-close" type="button">ปิด</button></div>
     </section>
   </div>
 

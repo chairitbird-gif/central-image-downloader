@@ -1,5 +1,12 @@
 [
   {
+    "version": "beta 1.1",
+    "date": "2026-07-17",
+    "changes": [
+      "ปรับปุ่มเวอร์ชันและหน้าต่าง มีอะไรใหม่ ให้ใช้ UI เดียวกับ Overlay Generator"
+    ]
+  },
+  {
     "version": "beta 1.0",
     "date": "2026-07-17",
     "changes": [

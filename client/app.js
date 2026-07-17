@@ -132,24 +132,18 @@
 
   const versionModal = document.getElementById('versionModal');
   const versionClose = document.getElementById('versionClose');
-  const versionMeta = document.getElementById('versionMeta');
-  const versionList = document.getElementById('versionList');
+  const versionBody = document.getElementById('versionBody');
 
   async function renderVersionModal() {
     const info = await versionInfoPromise;
     if (!info?.version) return false;
-    document.getElementById('versionTitle').textContent = `Central Image Downloader v${info.version}`;
-    versionMeta.replaceChildren(
-      Object.assign(document.createElement('span'), { className: 'version-pill', textContent: `version: ${info.version}` }),
-      Object.assign(document.createElement('span'), { className: 'version-pill', textContent: `date: ${info.date}` }),
-      Object.assign(document.createElement('span'), { className: 'version-pill', textContent: `git: ${info.hash || 'dev'}` }),
-      Object.assign(document.createElement('span'), { className: 'version-pill', textContent: `renderer: ${info.renderer || 'canvas'}` }),
-    );
-    versionList.replaceChildren(...(info.changes || []).map((change) => {
-      const li = document.createElement('li');
-      li.textContent = change;
-      return li;
-    }));
+    versionBody.replaceChildren();
+    for (const entry of info.changelog || []) {
+      const head = Object.assign(document.createElement('div'), { className:'version-entry-title', textContent:`เวอร์ชัน ${entry.version} — ${entry.date}` });
+      const list = Object.assign(document.createElement('ul'), { className:'version-entry-list' });
+      for (const change of entry.changes || []) list.appendChild(Object.assign(document.createElement('li'), { textContent:change }));
+      versionBody.append(head, list);
+    }
     return true;
   }
 
