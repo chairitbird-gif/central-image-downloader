@@ -1,5 +1,12 @@
 [
   {
+    "version": "beta 1.2",
+    "date": "2026-07-17",
+    "changes": [
+      "จัดตำแหน่งจุดเริ่มข้อความเวอร์ชันใน header ให้ตรงกับ Overlay Generator ระดับพิกเซล"
+    ]
+  },
+  {
     "version": "beta 1.1",
     "date": "2026-07-17",
     "changes": [
