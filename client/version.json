@@ -1,12 +1,19 @@
 {
-  "version": "beta 1.1",
+  "version": "beta 1.2",
   "date": "2026-07-17",
-  "hash": "412e2d7",
+  "hash": "1f42db3",
   "renderer": "browser",
   "changes": [
-    "ปรับปุ่มเวอร์ชันและหน้าต่าง มีอะไรใหม่ ให้ใช้ UI เดียวกับ Overlay Generator"
+    "จัดตำแหน่งจุดเริ่มข้อความเวอร์ชันใน header ให้ตรงกับ Overlay Generator ระดับพิกเซล"
   ],
   "changelog": [
+    {
+      "version": "beta 1.2",
+      "date": "2026-07-17",
+      "changes": [
+        "จัดตำแหน่งจุดเริ่มข้อความเวอร์ชันใน header ให้ตรงกับ Overlay Generator ระดับพิกเซล"
+      ]
+    },
     {
       "version": "beta 1.1",
       "date": "2026-07-17",
