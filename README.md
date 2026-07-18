@@ -1,18 +1,27 @@
-# Central Image Downloader — Web deployment
+# Central Image Downloader
 
-Deployment copy of the existing Central Image Downloader UI. It keeps the
-current workflow and supports Central image lookup, gallery selection, ZIP,
-Dicut, Dicut AI, and the existing local Photoshop-helper flow.
+The primary app is now a static, client-side site in `client/`. Product lookup,
+CDN download, JPEG/PNG conversion, lazy gallery probing, Trim, white-background
+Dicut, folder save, and ZIP creation all run in the user's browser. There is no
+server-side image pipeline and no cold start.
 
-This project is web-first. Do not build or distribute a Windows `.exe`; run the
-Flask app locally when local folder access is needed, or use the hosted site.
-On macOS, Dicut PS connects the web page to Photoshop through the small
-localhost helper served by `/dicut-ps-helper.sh`.
-On the hosted site, Chrome/Edge users can choose a local destination via the
-browser File System Access API. Brave intentionally disables that API, so it
-and other unsupported browsers fall back to their configured Downloads folder.
+The existing Flask `app.py` remains available as the localhost fallback for
+SKUs that are not present in Algolia and therefore need the Central/Google
+scraping steps that browsers cannot run.
 
-## Run locally
+## Run the client-side site
+
+```powershell
+python -m http.server 8766 --bind 127.0.0.1 --directory client
+```
+
+Open `http://127.0.0.1:8766/`. Do not open `index.html` through `file://` because
+folder access and hosted-origin behavior must be tested from an HTTP origin.
+
+There is no hard SKU limit. For typical computers, use batches of about 100 or
+fewer; PNG, Dicut, and ZIP use more memory than JPEG.
+
+## Run the legacy localhost fallback
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -21,7 +30,13 @@ python app.py
 
 Open `http://localhost:5000`.
 
-## Hosting notes
+## Static hosting
+
+Deploy `client/` as the Cloudflare Pages output directory. No build command is
+required. `client/_headers` contains the browser security policy for the
+Algolia and Central asset endpoints.
+
+## Legacy Flask hosting notes
 
 - Run one Gunicorn worker because job sessions and image edits are in memory.
 - Product lookup uses Central's public Algolia `cds_products` index first and
