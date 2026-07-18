@@ -1,5 +1,7 @@
 # Central Image Downloader
 
+Production: `https://central-image-downloader.pages.dev/`
+
 The primary app is now a static, client-side site in `client/`. Product lookup,
 CDN download, JPEG/PNG conversion, lazy gallery probing, Trim, white-background
 Dicut, folder save, and ZIP creation all run in the user's browser. There is no
@@ -20,6 +22,15 @@ folder access and hosted-origin behavior must be tested from an HTTP origin.
 
 There is no hard SKU limit. For typical computers, use batches of about 100 or
 fewer; PNG, Dicut, and ZIP use more memory than JPEG.
+
+## Architecture and API notes
+
+- Current system boundaries and source files: `docs/ARCHITECTURE.md`
+- Current Central lookup/CDN findings and operational risks: `docs/API_FINDINGS.md`
+- Historical implementation handoffs: `docs/archive/2026-07/`
+
+Treat `client/` and this README as current behavior. Documents under
+`docs/archive/` explain prior decisions but are not implementation instructions.
 
 ## Run the legacy localhost fallback
 
@@ -52,3 +63,11 @@ Algolia and Central asset endpoints.
 - Set `ACCESS_PASSWORD` to protect a private deployment; leave it unset for the
   same link-only public access model as the Strip Banner app.
 - Dicut PS still runs Photoshop on the user's computer through the local helper.
+
+## Release checks
+
+For client-side changes, serve `client/` over HTTP and verify lookup, gallery,
+JPEG/PNG conversion, Trim, Dicut, folder save, ZIP, and responsive UI as relevant
+to the change. Changes to the Central Creative Tools header or feedback widget
+must follow the shared contracts in the workspace root and ship with every
+consumer in the coordinated release set.
