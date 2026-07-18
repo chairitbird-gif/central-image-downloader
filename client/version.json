@@ -1,12 +1,19 @@
 {
-  "version": "beta 1.2",
-  "date": "2026-07-17",
-  "hash": "1f42db3",
+  "version": "beta 1.3",
+  "date": "2026-07-18",
+  "hash": "ceb7b7e",
   "renderer": "browser",
   "changes": [
-    "จัดตำแหน่งจุดเริ่มข้อความเวอร์ชันใน header ให้ตรงกับ Overlay Generator ระดับพิกเซล"
+    "ปรับ header บนมือถือให้ใช้ตำแหน่ง ระยะ และการตัดบรรทัดแบบเดียวกับ Strip Banner และ Overlay Generator"
   ],
   "changelog": [
+    {
+      "version": "beta 1.3",
+      "date": "2026-07-18",
+      "changes": [
+        "ปรับ header บนมือถือให้ใช้ตำแหน่ง ระยะ และการตัดบรรทัดแบบเดียวกับ Strip Banner และ Overlay Generator"
+      ]
+    },
     {
       "version": "beta 1.2",
       "date": "2026-07-17",
