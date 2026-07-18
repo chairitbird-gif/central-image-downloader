@@ -1,12 +1,19 @@
 {
-  "version": "beta 1.3",
+  "version": "beta 1.4",
   "date": "2026-07-18",
-  "hash": "034fc9e",
+  "hash": "b88f788",
   "renderer": "browser",
   "changes": [
-    "ปรับ header บนมือถือให้ใช้ตำแหน่ง ระยะ และการตัดบรรทัดแบบเดียวกับ Strip Banner และ Overlay Generator"
+    "ซิงก์ shared feedback collision contract และขยายพื้นที่กดของ shared header บนมือถือทั้งชุด Central Creative Tools"
   ],
   "changelog": [
+    {
+      "version": "beta 1.4",
+      "date": "2026-07-18",
+      "changes": [
+        "ซิงก์ shared feedback collision contract และขยายพื้นที่กดของ shared header บนมือถือทั้งชุด Central Creative Tools"
+      ]
+    },
     {
       "version": "beta 1.3",
       "date": "2026-07-18",
