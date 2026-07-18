@@ -172,6 +172,8 @@ code { color:var(--ink); }
   .suite-brand { min-width:0; flex-basis:100%; }.topbar p { display:none; }
   .tool-nav { width:100%; margin-left:0; flex-wrap:wrap; overflow-x:visible; gap:6px 8px; }
   .tool-nav > * { flex:0 0 auto; }
+  #buildVersion { min-height:32px; align-items:center; }
+  .tool-link,.theme-button { min-height:40px; }
   .theme-button { margin-left:auto; }
   .container { width:min(100% - 20px,1040px); margin-top:14px; }
   .panel { padding:16px; }.live-count { width:100%; margin-left:0; }

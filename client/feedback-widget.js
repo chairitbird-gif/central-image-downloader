@@ -23,6 +23,19 @@
   const submit = root.querySelector('.feedback-submit');
   let files = [];
 
+  const syncLauncherOffset = () => {
+    let obstruction = 0;
+    document.querySelectorAll('[data-feedback-obstruction]').forEach(element => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width && rect.height && rect.bottom >= innerHeight - 1) obstruction = Math.max(obstruction, innerHeight - rect.top);
+    });
+    launch.style.setProperty('--feedback-obstruction', Math.ceil(obstruction) + 'px');
+  };
+  addEventListener('resize', syncLauncherOffset);
+  addEventListener('scroll', syncLauncherOffset, { passive: true });
+  if ('ResizeObserver' in window) new ResizeObserver(syncLauncherOffset).observe(document.body);
+  requestAnimationFrame(syncLauncherOffset);
+
   async function compressImage(file) {
     const bitmap = await createImageBitmap(file);
     const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));

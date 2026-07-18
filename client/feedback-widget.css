@@ -7,3 +7,5 @@
 .feedback-drop{margin-top:12px;border:1px dashed #666b74;border-radius:10px;padding:18px;text-align:center;background:#22252a;color:#9a9fa8;cursor:pointer}.feedback-drop.drag{border-color:#f50a3c;background:rgb(245 10 60 / 8%)}.feedback-drop strong{display:block;color:#eef0f2}.feedback-files{margin-top:8px;font-size:11px;color:#b9bdc3;overflow-wrap:anywhere}
 .feedback-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:16px}.feedback-submit{border:0;border-radius:8px;padding:10px 16px;background:#f50a3c;color:#fff;font-weight:750}.feedback-submit:disabled{opacity:.55}.feedback-result{min-height:18px;margin-right:auto;color:#9a9fa8;font-size:12px}.feedback-result.ok{color:#4ade80}.feedback-result.error{color:#ff8098}
 @media(max-width:600px){.feedback-launch{right:12px;bottom:12px}.feedback-backdrop{padding:0}.feedback-dialog{width:100%;max-height:92vh;border-radius:14px 14px 0 0}}
+.feedback-launch{bottom:calc(20px + var(--feedback-obstruction,0px))}
+@media(max-width:600px){.feedback-launch{bottom:calc(12px + var(--feedback-obstruction,0px))}}
