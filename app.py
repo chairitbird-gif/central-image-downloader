@@ -639,6 +639,36 @@ def dicut_white(jpg_bytes, tol=20):
     rgba.putalpha(alpha)
     return _finish_dicut(rgba, img)
 
+def _content_bbox(img_rgb, tol=20):
+    """กรอบของ 'เนื้อรูป' (ตัดขอบขาว/ใกล้ขาวออก) — คืน bbox หรือ None ถ้าทั้งรูปขาว"""
+    r, g, b = img_rgb.split()
+    thr = 255 - tol
+    mask_white = ImageChops.darker(
+        ImageChops.darker(r.point(lambda v: 255 if v >= thr else 0),
+                          g.point(lambda v: 255 if v >= thr else 0)),
+        b.point(lambda v: 255 if v >= thr else 0))
+    return ImageChops.invert(mask_white).getbbox()
+
+def trim_to_content(img_bytes, want_png):
+    """ตัด canvas ให้พอดีกับตัวสินค้า (ไม่ลบพื้นหลัง):
+    - รูปโปร่งใส (RGBA) → ครอปตามกรอบ alpha
+    - รูปพื้นขาว (RGB)  → ครอปตามกรอบเนื้อรูป (คงพื้นขาวไว้)
+    คืน (out_bytes, size, is_png)"""
+    im = Image.open(io.BytesIO(img_bytes))
+    if im.mode in ('RGBA', 'LA') or (im.mode == 'P' and 'transparency' in im.info):
+        im = im.convert('RGBA')
+        bbox = im.getchannel('A').getbbox()
+        if bbox:
+            im = im.crop(bbox)
+        return _png_bytes(im), im.size, True
+    im = im.convert('RGB')
+    bbox = _content_bbox(im)
+    if bbox:
+        im = im.crop(bbox)
+    if want_png:
+        return _png_bytes(im), im.size, True
+    return _jpg_bytes(im), im.size, False
+
 def dicut_ai(jpg_bytes):
     """ลบพื้นหลังด้วย AI (rembg / U²-Net) แล้ว trim — คมชัด ตัดเฉพาะวัตถุจริง
     ทำงานในเครื่อง (offline หลังโหลดโมเดลครั้งแรก) ไม่ส่งรูปขึ้นเน็ต
@@ -1058,6 +1088,16 @@ def dicut_one(session_id, sku):
     method = (request.json or {}).get('method', 'white')
     src = sess['orig'][sku]
     try:
+        if method == 'trim':
+            # ตัดขอบรูป "ปัจจุบัน" (จะเป็นต้นฉบับหรือรูปที่ dicut แล้วก็ได้) ให้พอดีตัวสินค้า
+            cur = sess['images'].get(sku, src)
+            want_png = sess.get('fmt', {}).get(sku) == 'png'
+            out, size, is_png = trim_to_content(cur, want_png)
+            sess['images'][sku] = out
+            sess['fmt'][sku] = 'png' if is_png else 'jpg'
+            sess.get('orig_crop', {}).pop(sku, None)  # trim ไม่ใช่ลบพื้น → ไม่มีอะไรเทียบ
+            return {'ok': True, 'transparent': is_png, 'trim': True,
+                    'w': size[0], 'h': size[1]}
         if method == 'orig':
             sess['images'][sku] = src
             sess['fmt'][sku] = sess.get('dl_fmt', 'jpg')
@@ -2214,6 +2254,10 @@ HTML_PAGE = '''<!DOCTYPE html>
     <div id="dicut-bar">
       <div class="dicut-btns">
         <div class="dicut-col">
+          <button class="btn-secondary" id="btn-dicut-trim" onclick="dicutAll('trim')" style="background:#6c757d;color:#fff">🔲 Trim</button>
+          <div class="desc">ตัดขอบให้พอดีตัวสินค้า (ไม่ลบพื้นหลัง)</div>
+        </div>
+        <div class="dicut-col">
           <button class="btn-secondary" id="btn-dicut" onclick="dicutAll('white')" style="background:var(--info);color:#fff">✂️ Dicut</button>
           <div class="desc">ลบพื้นหลังขาว (เร็ว) เหมาะกับรูปพื้นขาวสะอาด</div>
         </div>
@@ -2814,10 +2858,10 @@ async function dicutAll(method){
   const locked=loadedSkus.length-targets.length;
   if(!targets.length){ toast('ทุก SKU ถูกล็อกไว้ — ไม่มีอะไรให้ทำ'); return; }
   dicutRunning=true; dicutCancel=false;
-  const btns=['btn-dicut','btn-dicut-ai','btn-dicut-ps','btn-dicut-orig'].map(id=>document.getElementById(id));
-  btns.forEach(b=>b.disabled=true);
+  const btns=['btn-dicut-trim','btn-dicut','btn-dicut-ai','btn-dicut-ps','btn-dicut-orig'].map(id=>document.getElementById(id));
+  btns.forEach(b=>b&&(b.disabled=true));
   const prog=document.getElementById('dicut-prog');
-  const label=method==='ai'?'Dicut AI':(method==='ps'?'Dicut PS':(method==='orig'?'คืนต้นฉบับ':'Dicut'));
+  const label=method==='ai'?'Dicut AI':(method==='ps'?'Dicut PS':(method==='orig'?'คืนต้นฉบับ':(method==='trim'?'Trim':'Dicut')));
   prog.innerHTML=`<span id="dicut-prog-txt"></span> <button class="btn-secondary" style="padding:4px 12px;font-size:.8rem" onclick="stopDicut()">⏹ หยุด</button>`;
   const ptxt=document.getElementById('dicut-prog-txt');
   let done=0, fail=0, i=0, firstErr='';
@@ -2847,7 +2891,7 @@ async function dicutAll(method){
       if(d.ok){ done++;
         const card=document.querySelector(`.img-card[data-sku="${sku}"]`);
         // เปิด/ปิดโหมดเปรียบเทียบ: dicut แล้วมีต้นฉบับให้ลากเทียบ / กดต้นฉบับ = ปิด
-        if(card){ if(method==='orig') card.classList.remove('has-cmp'); else card.classList.add('has-cmp'); }
+        if(card){ if(method==='orig'||method==='trim') card.classList.remove('has-cmp'); else card.classList.add('has-cmp'); }
         refreshCard(sku);
         if(autoSave){
           if(isLocal){ const folder=document.getElementById('folder-input').value.trim();
@@ -2863,7 +2907,7 @@ async function dicutAll(method){
   prog.textContent=`✅ ${label} เสร็จ ${done} รูป`+(fail?` · ล้มเหลว ${fail}`:'')+(locked?` · ล็อก ${locked}`:'')+stopped;
   // โชว์สาเหตุ error ตัวแรกให้เห็นจอเลย — จะได้ดีบักทางไกลได้ (โดยเฉพาะ Dicut PS)
   if(fail&&firstErr) alert(`${label} ล้มเหลว ${fail} รูป\\nสาเหตุ (รูปแรกที่พัง): ${firstErr}`);
-  btns.forEach(b=>b.disabled=false); dicutRunning=false;
+  btns.forEach(b=>b&&(b.disabled=false)); dicutRunning=false;
   toast(`${label} เสร็จ ${done} รูป`+(locked?` · ข้ามที่ล็อก ${locked}`:''));
 }
 
