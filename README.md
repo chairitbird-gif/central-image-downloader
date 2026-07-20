@@ -2,10 +2,11 @@
 
 Production: `https://central-image-downloader.pages.dev/`
 
-The primary app is now a static, client-side site in `client/`. Product lookup,
-CDN download, JPEG/PNG conversion, lazy gallery probing, Trim, white-background
-Dicut, folder save, and ZIP creation all run in the user's browser. There is no
-server-side image pipeline and no cold start.
+The primary app is a Cloudflare Pages site in `client/`. A Pages Function performs
+product lookup and keeps validated last-known-good SKU mappings in D1. CDN image
+download, JPEG/PNG conversion, lazy gallery probing, Trim, white-background Dicut,
+folder save, and ZIP creation still run in the user's browser; image bytes are never
+stored in D1 and there is no server-side image pipeline.
 
 The existing Flask `app.py` remains available as the localhost fallback for
 SKUs that are not present in Algolia and therefore need the Central/Google
@@ -41,11 +42,19 @@ python app.py
 
 Open `http://localhost:5000`.
 
-## Static hosting
+## Cloudflare Pages hosting
 
-Deploy `client/` as the Cloudflare Pages output directory. No build command is
-required. `client/_headers` contains the browser security policy for the
-Algolia and Central asset endpoints.
+`wrangler.toml` binds the `SKU_CACHE` D1 database and declares `client/` as the
+Pages output directory. Apply new migrations before deploying:
+
+```powershell
+npx wrangler d1 execute central-image-sku-cache --remote --file migrations/0001_sku_cache.sql
+npx wrangler pages deploy client --project-name central-image-downloader
+```
+
+Do not pass `--branch main` for this direct-upload project; that creates a preview
+deployment instead of updating the production alias. `client/_headers` contains
+the browser security policy for the API, Algolia, and Central asset endpoints.
 
 ## Legacy Flask hosting notes
 
