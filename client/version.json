@@ -1,12 +1,19 @@
 {
-  "version": "beta 1.4",
-  "date": "2026-07-18",
-  "hash": "b88f788",
+  "version": "beta 1.5",
+  "date": "2026-07-20",
+  "hash": "b7f038d",
   "renderer": "browser",
   "changes": [
-    "ซิงก์ shared feedback collision contract และขยายพื้นที่กดของ shared header บนมือถือทั้งชุด Central Creative Tools"
+    "เพิ่มคีย์ลัด Ctrl/⌘ + Shift + S = ดาวน์โหลด ให้ตรงกับ Strip Banner และ Overlay Generator"
   ],
   "changelog": [
+    {
+      "version": "beta 1.5",
+      "date": "2026-07-20",
+      "changes": [
+        "เพิ่มคีย์ลัด Ctrl/⌘ + Shift + S = ดาวน์โหลด ให้ตรงกับ Strip Banner และ Overlay Generator"
+      ]
+    },
     {
       "version": "beta 1.4",
       "date": "2026-07-18",
