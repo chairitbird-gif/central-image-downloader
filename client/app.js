@@ -92,6 +92,20 @@
     return [...new Set(tokens)];
   }
 
+  function inspectSkuInput(value = els.skuInput.value) {
+    const tokens = value.toUpperCase().split(/[\s,;]+/).map((item) => item.trim()).filter(Boolean);
+    const seen = new Set();
+    const duplicates = [];
+    const overlong = [];
+    for (const sku of tokens) {
+      if (sku.length > 30 && !overlong.includes(sku)) overlong.push(sku);
+      if (seen.has(sku)) {
+        if (!duplicates.includes(sku)) duplicates.push(sku);
+      } else seen.add(sku);
+    }
+    return { skus: [...seen], duplicates, overlong };
+  }
+
   function safePrefix() {
     return els.prefix.value.replace(/[<>:"/\\|?*]/g, '').slice(0, 40);
   }
@@ -513,7 +527,7 @@
     const fromCache = item.lookup?.sourceType === 'cache';
     sourceNote.classList.toggle('is-cache', fromCache);
     sourceNote.textContent = fromCache
-      ? `CACHE · ${item.lookup.cacheReason === 'algolia_error' ? 'ระบบค้นหาขัดข้อง' : 'รอบนี้ค้นหาไม่พบ'}`
+      ? `CACHE · ${item.lookup.cacheReason === 'revalidating' ? 'กำลังตรวจสอบข้อมูลล่าสุด' : item.lookup.cacheReason === 'algolia_error' ? 'ระบบค้นหาขัดข้อง' : 'รอบนี้ค้นหาไม่พบ'}`
       : 'ข้อมูลล่าสุด';
     sourceNote.title = fromCache && item.lookup.verifiedAt
       ? `ใช้ URL สำรองที่ระบบยืนยันล่าสุด ${new Date(item.lookup.verifiedAt).toLocaleString('th-TH')}`
@@ -622,8 +636,15 @@
 
   async function startDownload() {
     if (state.running) return;
-    const skus = parseSkus();
+    const inspected = inspectSkuInput();
+    const skus = inspected.skus;
     if (!skus.length) { toast('กรุณากรอก SKU ก่อน'); return; }
+    if (inspected.overlong.length) {
+      const message = `SKU ยาวเกิน 30 ตัว: ${inspected.overlong.join(', ')}`;
+      toast(message);
+      log(`⚠ ${message}`, 'error');
+      return;
+    }
     clearResults();
     state.runId += 1;
     const runId = state.runId;
@@ -635,6 +656,11 @@
     els.resultsPanel.classList.remove('hidden');
     pushHistory(skus);
     log(`📦 เริ่ม ${skus.length} SKU — Algolia client-side`, 'head');
+    if (inspected.duplicates.length) {
+      const message = `พบ SKU ซ้ำ: ${inspected.duplicates.join(', ')} — ระบบจะประมวลผลเพียงครั้งเดียว`;
+      toast(message);
+      log(`ℹ ${message}`, 'warn');
+    }
     if (skus.length > CONFIG.recommendedBatchSize) {
       log(`ℹ ${skus.length} SKU เกินจำนวนแนะนำ ${CONFIG.recommendedBatchSize} — ระบบจะทำต่อ แต่ PNG/Dicut/ZIP อาจใช้ RAM สูง`, 'warn');
     }
@@ -1016,8 +1042,14 @@
   }
 
   function updateCount() {
-    const count = parseSkus().length;
+    const inspected = inspectSkuInput();
+    const count = inspected.skus.length;
     els.skuCount.textContent = count;
+    if (inspected.overlong.length) {
+      els.batchAdvisory.textContent = `⚠ SKU ยาวเกิน 30 ตัว: ${inspected.overlong.join(', ')}`;
+      els.batchAdvisory.classList.remove('hidden');
+      return;
+    }
     const overRecommended = count > CONFIG.recommendedBatchSize;
     els.batchAdvisory.textContent = overRecommended
       ? `⚠ ${count} SKU — ระบบยังทำต่อได้ แต่แนะนำแบ่งรอบไม่เกิน ${CONFIG.recommendedBatchSize} SKU; PNG, Dicut และ ZIP ใช้ RAM มากกว่า JPEG`

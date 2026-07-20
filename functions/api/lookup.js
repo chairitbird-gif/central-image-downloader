@@ -3,6 +3,10 @@ const ALGOLIA_SEARCH_KEY = '219108856fc945a087d091aebc7eebbb';
 const ALGOLIA_INDEX = 'cds_products';
 const ASSETS_HOST = 'assets.central.co.th';
 const CACHE_LIMIT = 5000;
+const MAX_SKU_LENGTH = 30;
+const NEGATIVE_CACHE_MS = 60 * 1000;
+const FRESH_CACHE_MS = 15 * 60 * 1000;
+const inflightLookups = new Map();
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -17,7 +21,7 @@ function json(data, status = 200) {
 
 function validSku(value) {
   const sku = String(value || '').trim().toUpperCase();
-  return /^(?:CDS|GRCDS|MKP)[A-Z0-9]{4,32}$/.test(sku) ? sku : '';
+  return sku && sku.length <= MAX_SKU_LENGTH ? sku : '';
 }
 
 function validateRecord(record, sku) {
@@ -76,16 +80,32 @@ async function lookupAlgoliaOnce(sku) {
 }
 
 async function lookupAlgolia(sku) {
-  const delays = [0, 400, 1000];
-  let lastError = null;
-  for (const wait of delays) {
-    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
-    try {
-      const result = await lookupAlgoliaOnce(sku);
-      if (result) return { result, reason: '' };
-    } catch (error) { lastError = error; }
+  try {
+    const result = await lookupAlgoliaOnce(sku);
+    if (result) return { result, reason: '' };
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const base = `https://${ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/${encodeURIComponent(ALGOLIA_INDEX)}`;
+    const fields = 'sku,url_key,image_url,thumbnail_url';
+    const response = await fetch(`${base}/${encodeURIComponent(sku)}?attributesToRetrieve=${encodeURIComponent(fields)}`, {
+      headers: algoliaHeaders()
+    });
+    if (response.ok) {
+      const retry = validateRecord(await response.json(), sku);
+      if (retry) return { result: { ...retry, lookupSource: 'getObject retry' }, reason: '' };
+    } else if (response.status !== 404) {
+      throw new Error(`Algolia getObject retry HTTP ${response.status}`);
+    }
+    return { result: null, reason: 'algolia_not_found' };
+  } catch (_) {
+    return { result: null, reason: 'algolia_error' };
   }
-  return { result: null, reason: lastError ? 'algolia_error' : 'algolia_not_found' };
+}
+
+function coalescedLookup(sku) {
+  if (inflightLookups.has(sku)) return inflightLookups.get(sku);
+  const pending = lookupAlgolia(sku).finally(() => inflightLookups.delete(sku));
+  inflightLookups.set(sku, pending);
+  return pending;
 }
 
 async function saveCache(db, sku, match) {
@@ -126,14 +146,79 @@ async function readCache(db, sku) {
   return { ...match, lookupSource: row.lookup_source, cachedAt: row.cached_at, verifiedAt: row.verified_at };
 }
 
+async function readNegativeCache(db, sku) {
+  if (!db) return false;
+  const row = await db.prepare('SELECT expires_at FROM sku_negative_cache WHERE sku = ?1').bind(sku).first();
+  if (!row) return false;
+  if (Date.parse(row.expires_at) > Date.now()) return true;
+  await db.prepare('DELETE FROM sku_negative_cache WHERE sku = ?1').bind(sku).run();
+  return false;
+}
+
+async function saveNegativeCache(db, sku) {
+  if (!db) return;
+  const expiresAt = new Date(Date.now() + NEGATIVE_CACHE_MS).toISOString();
+  await db.prepare(`
+    INSERT INTO sku_negative_cache (sku, expires_at) VALUES (?1, ?2)
+    ON CONFLICT(sku) DO UPDATE SET expires_at = excluded.expires_at
+  `).bind(sku, expiresAt).run();
+}
+
+async function clearNegativeCache(db, sku) {
+  if (!db) return;
+  await db.prepare('DELETE FROM sku_negative_cache WHERE sku = ?1').bind(sku).run();
+}
+
+function cacheResponse(cached, cacheReason) {
+  return json({
+    found: true,
+    source: 'cache',
+    cacheReason,
+    cachedAt: cached.cachedAt,
+    verifiedAt: cached.verifiedAt,
+    imageUrl: cached.imageUrl,
+    record: { sku: cached.recordSku, url_key: cached.urlKey, image_url: cached.imageUrl }
+  });
+}
+
+async function refreshLookup(db, sku) {
+  const algolia = await coalescedLookup(sku);
+  if (algolia.result) {
+    try {
+      await saveCache(db, sku, algolia.result);
+      await clearNegativeCache(db, sku);
+    } catch (error) { console.error('D1 cache write failed', error); }
+  } else if (algolia.reason === 'algolia_not_found') {
+    try { await saveNegativeCache(db, sku); }
+    catch (error) { console.error('D1 negative cache write failed', error); }
+  }
+  return algolia;
+}
+
 export async function onRequestGet(context) {
   const sku = validSku(new URL(context.request.url).searchParams.get('sku'));
   if (!sku) return json({ found: false, error: 'invalid_sku' }, 400);
 
-  const algolia = await lookupAlgolia(sku);
+  let cached = null;
+  try { cached = await readCache(context.env.SKU_CACHE, sku); }
+  catch (error) { console.error('D1 cache read failed', error); }
+
+  const verifiedAge = cached?.verifiedAt ? Date.now() - Date.parse(cached.verifiedAt) : Infinity;
+  if (cached && verifiedAge >= 0 && verifiedAge <= FRESH_CACHE_MS) {
+    const refresh = refreshLookup(context.env.SKU_CACHE, sku).catch((error) => console.error('Background refresh failed', error));
+    if (context.waitUntil) context.waitUntil(refresh);
+    return cacheResponse(cached, 'revalidating');
+  }
+
+  let negativeHit = false;
+  try { negativeHit = await readNegativeCache(context.env.SKU_CACHE, sku); }
+  catch (error) { console.error('D1 negative cache read failed', error); }
+  if (negativeHit) return cached
+    ? cacheResponse(cached, 'algolia_not_found')
+    : json({ found: false, reason: 'negative_cache', retryAfter: 60 }, 404);
+
+  const algolia = await refreshLookup(context.env.SKU_CACHE, sku);
   if (algolia.result) {
-    try { await saveCache(context.env.SKU_CACHE, sku, algolia.result); }
-    catch (error) { console.error('D1 cache write failed', error); }
     return json({
       found: true,
       source: 'algolia',
@@ -143,17 +228,6 @@ export async function onRequestGet(context) {
     });
   }
 
-  let cached = null;
-  try { cached = await readCache(context.env.SKU_CACHE, sku); }
-  catch (error) { console.error('D1 cache read failed', error); }
   if (!cached) return json({ found: false, reason: algolia.reason }, 404);
-  return json({
-    found: true,
-    source: 'cache',
-    cacheReason: algolia.reason,
-    cachedAt: cached.cachedAt,
-    verifiedAt: cached.verifiedAt,
-    imageUrl: cached.imageUrl,
-    record: { sku: cached.recordSku, url_key: cached.urlKey, image_url: cached.imageUrl }
-  });
+  return cacheResponse(cached, algolia.reason);
 }
