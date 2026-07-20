@@ -12,10 +12,11 @@ The primary product is the static application in `client/`:
 
 ## D1 SKU cache
 
-- Binding: `SKU_CACHE`; database: `central-image-sku-cache`; schema: `migrations/0001_sku_cache.sql`.
+- Binding: `SKU_CACHE`; database: `central-image-sku-cache`; schemas: `migrations/0001_sku_cache.sql` and `migrations/0002_negative_cache.sql`.
 - The cache stores SKU-to-CDSPIM URL metadata only, never image bytes.
 - Only the server-side lookup function writes records, after exact identity and Central asset-host validation.
-- Current Algolia hits always overwrite changed URLs. Cache fallback is used only after Algolia retries miss or fail.
+- Current Algolia hits always overwrite changed URLs. A mapping verified within 15 minutes is served immediately and revalidated with Algolia in the background; older mappings wait for the bounded lookup and remain a fallback for miss/error.
+- Confirmed Algolia misses are stored for 60 seconds so repeated requests do not amplify upstream traffic. Concurrent same-SKU requests in one Function isolate share a single in-flight lookup.
 - The table retains the 5,000 most recently used SKUs. A cache badge on every result card makes the data source visible.
 - When Pages Functions are unavailable during plain static local development, the frontend falls back to its validated direct Algolia lookup without D1.
 
@@ -44,6 +45,7 @@ Algolia storefront identifiers and search-only keys are public client configurat
 - Accept only expected HTTPS asset hosts; never turn lookup results into an unrestricted URL fetcher.
 - Require exact SKU matching, with the documented GR group-SKU exception based on `url_key`.
 - Request only fields required by the application and keep lookup concurrency bounded.
+- Accept non-empty SKU values up to 30 characters without enforcing a business-prefix pattern; record identity and asset-host validation still apply to results.
 - Preserve original dimensions unless the user explicitly invokes an image operation.
 - Keep the shared header and feedback widget synchronized under the workspace-level contracts.
 

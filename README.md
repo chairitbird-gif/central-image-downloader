@@ -48,7 +48,7 @@ Open `http://localhost:5000`.
 Pages output directory. Apply new migrations before deploying:
 
 ```powershell
-npx wrangler d1 execute central-image-sku-cache --remote --file migrations/0001_sku_cache.sql
+npx wrangler d1 migrations apply central-image-sku-cache --remote
 npx wrangler pages deploy client --project-name central-image-downloader
 ```
 
@@ -62,6 +62,12 @@ the browser security policy for the API, Algolia, and Central asset endpoints.
 - Product lookup uses Central's public Algolia `cds_products` index first and
   downloads the returned CDSPIM path from `assets.central.co.th`. The existing
   Central page scraper and Google lookup remain as fallbacks.
+- The public lookup accepts any non-empty SKU text up to 30 characters. It does
+  not enforce a CDS/GRCDS/MKP naming pattern.
+- Algolia misses are negative-cached in D1 for 60 seconds. Concurrent requests
+  for the same SKU share one in-flight Algolia lookup within a Function isolate.
+- A positive D1 mapping verified within 15 minutes is returned immediately and
+  revalidated in the background; the UI labels that state explicitly.
 - The Algolia defaults can be overridden with `CENTRAL_ALGOLIA_APP_ID`,
   `CENTRAL_ALGOLIA_SEARCH_KEY`, `CENTRAL_ALGOLIA_PRODUCT_INDEX`, and
   `CENTRAL_ASSETS_BASE` if Central rotates its public storefront configuration.
