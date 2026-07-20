@@ -4,10 +4,20 @@
 
 The primary product is the static application in `client/`:
 
-1. `client/app.js` performs exact SKU lookup against the configured public Central Algolia product index.
-2. Lookup results provide validated CDSPIM paths hosted by `assets.central.co.th`.
-3. The browser downloads source images and performs format conversion, gallery probing, Trim, white-background Dicut, folder save, and ZIP creation locally.
-4. `client/index.html`, `client/styles.css`, and `client/app.js` are the frontend source. `client/version.json` is release metadata.
+1. `functions/api/lookup.js` performs exact SKU lookup against the configured public Central Algolia product index and stores validated last-known-good mappings in Cloudflare D1.
+2. When Algolia misses or fails after bounded retries, the function may return a previously validated D1 mapping with an explicit cache source; the UI never presents this as a current Algolia hit.
+3. Lookup results provide validated CDSPIM paths hosted by `assets.central.co.th`.
+4. The browser downloads source images and performs format conversion, gallery probing, Trim, white-background Dicut, folder save, and ZIP creation locally.
+5. `client/index.html`, `client/styles.css`, and `client/app.js` are the frontend source. `client/version.json` is release metadata.
+
+## D1 SKU cache
+
+- Binding: `SKU_CACHE`; database: `central-image-sku-cache`; schema: `migrations/0001_sku_cache.sql`.
+- The cache stores SKU-to-CDSPIM URL metadata only, never image bytes.
+- Only the server-side lookup function writes records, after exact identity and Central asset-host validation.
+- Current Algolia hits always overwrite changed URLs. Cache fallback is used only after Algolia retries miss or fail.
+- The table retains the 5,000 most recently used SKUs. A cache badge on every result card makes the data source visible.
+- When Pages Functions are unavailable during plain static local development, the frontend falls back to its validated direct Algolia lookup without D1.
 
 The browser path has no server image pipeline and no cold start. It must be served over HTTP(S); opening through `file://` is unsupported because hosted-origin and File System Access behavior differ.
 

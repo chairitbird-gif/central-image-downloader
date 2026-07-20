@@ -1,0 +1,8 @@
+name = "central-image-downloader"
+compatibility_date = "2026-07-20"
+pages_build_output_dir = "./client"
+
+[[d1_databases]]
+binding = "SKU_CACHE"
+database_name = "central-image-sku-cache"
+database_id = "dbb1a788-ad24-4d57-80b6-7a3e0df2f163"

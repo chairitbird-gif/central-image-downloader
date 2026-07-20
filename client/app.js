@@ -257,6 +257,33 @@
     return match ? { ...match, source: 'query fallback' } : null;
   }
 
+  async function lookupProduct(sku, signal) {
+    try {
+      const response = await gatedFetch(`/api/lookup?sku=${encodeURIComponent(sku)}`, {
+        headers: { Accept: 'application/json' }, signal, cache: 'no-store'
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await response.json();
+        if (!response.ok || !data.found) return null;
+        const match = validateRecord(data.record, sku);
+        if (!match || match.imageUrl !== data.imageUrl) return null;
+        return {
+          ...match,
+          source: data.source === 'cache' ? 'D1 cache' : `Algolia ${data.lookupSource || ''}`.trim(),
+          sourceType: data.source === 'cache' ? 'cache' : 'algolia',
+          cacheReason: data.cacheReason || '',
+          cachedAt: data.cachedAt || '',
+          verifiedAt: data.verifiedAt || ''
+        };
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') throw error;
+    }
+    const direct = await lookupAlgolia(sku, signal);
+    return direct ? { ...direct, sourceType: 'algolia' } : null;
+  }
+
   function galleryUrl(baseUrl, index) {
     const url = new URL(baseUrl);
     if (!/-(\d+)\.webp$/i.test(url.pathname)) return null;
@@ -440,6 +467,7 @@
             <span class="lock-icon" aria-hidden="true">🔓</span>
           </button></div>
         <div class="sku-context hidden"></div>
+        <div class="source-note" aria-live="polite"></div>
         <div class="duplicate-note hidden"></div>
         <div class="image-detail-row"><div class="image-info"></div><span class="edit-state"></span></div>
         <div class="card-actions">
@@ -481,6 +509,15 @@
     const stateBadge = $('.edit-state', card);
     stateBadge.textContent = stateLabels[editState];
     stateBadge.dataset.state = editState;
+    const sourceNote = $('.source-note', card);
+    const fromCache = item.lookup?.sourceType === 'cache';
+    sourceNote.classList.toggle('is-cache', fromCache);
+    sourceNote.textContent = fromCache
+      ? `CACHE · ${item.lookup.cacheReason === 'algolia_error' ? 'ระบบค้นหาขัดข้อง' : 'รอบนี้ค้นหาไม่พบ'}`
+      : 'ข้อมูลล่าสุด';
+    sourceNote.title = fromCache && item.lookup.verifiedAt
+      ? `ใช้ URL สำรองที่ระบบยืนยันล่าสุด ${new Date(item.lookup.verifiedAt).toLocaleString('th-TH')}`
+      : 'ค้นพบ SKU จากระบบหลักในรอบนี้';
     for (const action of ['trim', 'dicut', 'reset']) {
       const button = $(`[data-action="${action}"]`, card);
       const active = (action === 'reset' && editState === 'original') || action === editState;
@@ -606,7 +643,7 @@
     const signal = state.abortController.signal;
     const lookups = await Promise.all(skus.map(async (sku) => {
       try {
-        const lookup = await lookupAlgolia(sku, signal);
+        const lookup = await lookupProduct(sku, signal);
         if (!lookup) return { sku, status: 'not_found' };
         return { sku, status: 'found', lookup };
       } catch (error) {
@@ -624,7 +661,7 @@
       if (signal.aborted || runId !== state.runId) return finishRun(true);
       if (result.status === 'not_found') {
         state.notFound.push(result.sku);
-        log(`↗ ${result.sku}  ไม่พบใน Algolia — ลอง localhost`, 'warn');
+        log(`↗ ${result.sku}  ไม่พบทั้ง Algolia และ D1 cache — ลอง localhost`, 'warn');
       } else if (result.status === 'error') {
         state.errors.push({ sku: result.sku, reason: result.error.message });
         log(`⚠ ${result.sku}  ${result.error.message}`, 'error');

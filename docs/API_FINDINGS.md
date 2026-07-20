@@ -5,10 +5,10 @@ Updated: 2026-07-18
 ## Verified current model
 
 - Scraping `www.central.co.th` is unreliable from datacenter networks because its WAF can reject requests by network reputation even when the same request works from a Thai residential/dev connection.
-- Central storefront product search uses a public Algolia index. The application performs exact SKU lookup and uses `image_url`/`thumbnail_url` only after record validation.
+- Central storefront product search uses a public Algolia index. The Pages Function performs exact SKU lookup and uses `image_url`/`thumbnail_url` only after record validation, then records the mapping in D1 as a last-known-good fallback.
 - Current results expose CDSPIM paths that resolve under `https://assets.central.co.th/`; the old Scene7-host investigation is no longer the active implementation path.
 - Browser CORS support allows the static client to query the configured index and fetch Central assets directly at the time of the latest verification.
-- Client-side lookup covers Algolia records. The Flask localhost fallback retains Central/Google scraping for missing records.
+- Production lookup retries Algolia misses, then uses D1 only when a previously validated mapping exists. Plain static local development retains direct client-side Algolia lookup; the Flask localhost fallback retains Central/Google scraping for misses.
 
 ## Operational risks
 
