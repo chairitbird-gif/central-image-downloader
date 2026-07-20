@@ -1,5 +1,14 @@
 [
   {
+    "version": "beta 1.8",
+    "date": "2026-07-20",
+    "changes": [
+      "เพิ่ม motion สำหรับการ์ดรูป แกลเลอรี สถานะกำลังทำงาน สรุปผล แหล่งข้อมูล และหน้าต่างรูปเต็ม",
+      "ปรับ Shared Header และ Feedback Widget ให้มี motion และ accessibility ตรงกับเครื่องมืออื่นใน Central Creative Tools",
+      "หน้าต่างเวอร์ชันใช้งานด้วยคีย์บอร์ดได้ครบ: ย้ายโฟกัส วน Tab ปิดด้วย Escape และคืนโฟกัสเมื่อปิด"
+    ]
+  },
+  {
     "version": "beta 1.7",
     "date": "2026-07-20",
     "changes": [
