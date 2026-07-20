@@ -1076,6 +1076,13 @@
     els.lightboxClose.addEventListener('click', closeLightbox);
     els.lightbox.addEventListener('click', (event) => { if (event.target === els.lightbox) closeLightbox(); });
     document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeLightbox(); });
+    // Shared shortcut contract: Ctrl/Cmd+Shift+S = primary export (start download).
+    document.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === 's' || event.key === 'S')) {
+        event.preventDefault();
+        if (!els.download.disabled) els.download.click();
+      }
+    });
 
     $$('[data-batch-action]').forEach((button) => button.addEventListener('click', () => processBatch(button.dataset.batchAction)));
 

@@ -1,5 +1,12 @@
 [
   {
+    "version": "beta 1.5",
+    "date": "2026-07-20",
+    "changes": [
+      "เพิ่มคีย์ลัด Ctrl/⌘ + Shift + S = ดาวน์โหลด ให้ตรงกับ Strip Banner และ Overlay Generator"
+    ]
+  },
+  {
     "version": "beta 1.4",
     "date": "2026-07-18",
     "changes": [
