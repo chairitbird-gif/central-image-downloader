@@ -22,6 +22,29 @@
   const result = root.querySelector('.feedback-result');
   const submit = root.querySelector('.feedback-submit');
   let files = [];
+  let returnFocus = null;
+  let closeTimer = null;
+
+  const openDialog = () => {
+    clearTimeout(closeTimer);
+    returnFocus = document.activeElement;
+    backdrop.classList.remove('closing');
+    backdrop.classList.add('open');
+    close.focus();
+  };
+  const closeDialog = () => {
+    if (!backdrop.classList.contains('open')) return;
+    backdrop.classList.remove('open');
+    backdrop.classList.add('closing');
+    const finish = () => {
+      backdrop.classList.remove('closing');
+      const target = returnFocus && document.contains(returnFocus) ? returnFocus : launch;
+      returnFocus = null;
+      target.focus();
+    };
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) finish();
+    else closeTimer = setTimeout(finish, 130);
+  };
 
   const syncLauncherOffset = () => {
     let obstruction = 0;
@@ -55,9 +78,18 @@
       .then(output => { files = output; renderFiles(); })
       .catch(error => { files = []; filesLabel.textContent = error.message; });
   };
-  launch.addEventListener('click', () => backdrop.classList.add('open'));
-  close.addEventListener('click', () => backdrop.classList.remove('open'));
-  backdrop.addEventListener('click', event => { if (event.target === backdrop) backdrop.classList.remove('open'); });
+  launch.addEventListener('click', openDialog);
+  close.addEventListener('click', closeDialog);
+  backdrop.addEventListener('click', event => { if (event.target === backdrop) closeDialog(); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && backdrop.classList.contains('open')) closeDialog(); });
+  backdrop.addEventListener('keydown', event => {
+    if (event.key !== 'Tab') return;
+    const focusable = [...backdrop.querySelectorAll('button,input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter(element => !element.disabled && element.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
   drop.addEventListener('click', () => input.click());
   drop.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') input.click(); });
   input.addEventListener('change', () => setFiles(input.files));
@@ -66,7 +98,7 @@
   drop.addEventListener('drop', event => setFiles(event.dataTransfer.files));
   form.addEventListener('submit', async event => {
     event.preventDefault();
-    submit.disabled = true; result.className = 'feedback-result'; result.textContent = 'กำลังส่ง...';
+    submit.disabled = true; submit.classList.add('is-loading'); result.className = 'feedback-result'; result.textContent = 'กำลังส่ง...';
     const data = new FormData(form);
     data.set('tool', tool); data.set('page_url', location.href); data.set('viewport', `${innerWidth}x${innerHeight}`);
     files.forEach(file => data.append('images', file));
@@ -78,6 +110,6 @@
       form.reset(); files = []; renderFiles();
     } catch (error) {
       result.className = 'feedback-result error'; result.textContent = error.message;
-    } finally { submit.disabled = false; }
+    } finally { submit.disabled = false; submit.classList.remove('is-loading'); }
   });
 })();

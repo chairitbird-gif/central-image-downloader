@@ -163,13 +163,17 @@
 
   async function openVersionModal() {
     if (!(await renderVersionModal())) return;
+    versionModal.classList.remove('closing');
     versionModal.classList.add('open');
     versionModal.setAttribute('aria-hidden', 'false');
   }
 
   function closeVersionModal() {
+    if (!versionModal.classList.contains('open')) return;
     versionModal.classList.remove('open');
-    versionModal.setAttribute('aria-hidden', 'true');
+    versionModal.classList.add('closing');
+    const finish = () => { versionModal.classList.remove('closing'); versionModal.setAttribute('aria-hidden', 'true'); };
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) finish(); else setTimeout(finish, 130);
   }
 
   function setProgress(done, total, label = '') {
