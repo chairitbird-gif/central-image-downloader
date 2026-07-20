@@ -451,6 +451,8 @@
           <div class="gallery-head"><span>เลือกลำดับรูป</span>
             <span class="gallery-status" aria-live="polite">กำลังหา…</span></div>
           <div class="gallery-grid"></div>
+          <button class="button secondary gallery-download-all" type="button" data-action="download-gallery"
+            data-sku="${escapeHtml(item.sku)}" disabled>⬇ ดาวน์โหลดทุกรูป</button>
         </div>
       </div>`;
     els.imageGrid.appendChild(card);
@@ -525,6 +527,13 @@
     if (item.galleryLoaded) status.textContent = `${urls.length} รูป`;
     else if (item.galleryError) status.textContent = 'หาไม่สำเร็จ';
     else status.textContent = 'กำลังหา…';
+    const downloadAll = $('[data-action="download-gallery"]', card);
+    if (downloadAll) {
+      downloadAll.disabled = !item.galleryLoaded || item.galleryDownloading;
+      downloadAll.textContent = item.galleryDownloading
+        ? `กำลังสร้าง ZIP 0/${urls.length}…`
+        : `⬇ ดาวน์โหลดทุกรูป (${urls.length})`;
+    }
   }
 
   function renderNotFoundSummary() {
@@ -769,6 +778,48 @@
       await autoSaveItem(item);
     } catch (error) { toast(`เปลี่ยนรูปไม่ได้: ${error.message}`); }
     finally { card?.classList.remove('busy'); }
+  }
+
+  async function downloadGallery(item) {
+    if (!item.galleryLoaded || item.galleryDownloading) return;
+    const urls = item.gallery?.length ? item.gallery : [item.baseUrl];
+    const card = cardFor(item.sku);
+    const button = $('[data-action="download-gallery"]', card);
+    const format = els.imageFormat.value;
+    item.galleryDownloading = true;
+    renderGallery(item);
+    card?.classList.add('busy');
+    try {
+      const entries = [];
+      for (let offset = 0; offset < urls.length; offset += 1) {
+        if (button) button.textContent = `กำลังสร้าง ZIP ${offset + 1}/${urls.length}…`;
+        const fetched = await fetchImage(urls[offset]);
+        if (!fetched.response.ok) throw new Error(`รูปที่ ${offset + 1} CDN HTTP ${fetched.response.status}`);
+        const converted = await convertImage(fetched.blob, format);
+        entries.push({
+          name: `${safePrefix()}${item.sku}-${offset + 1}.${extensionForMime(converted.mime)}`,
+          blob: converted.blob
+        });
+      }
+      const blob = await buildStoreZip(entries);
+      const filename = `${safePrefix()}${item.sku}_all_images.zip`;
+      if (state.directoryHandle && await ensureDirectoryPermission(true)) {
+        await writeBlobToDirectory(blob, filename);
+        toast(`บันทึก ${item.sku} ครบ ${entries.length} รูปลง ${state.directoryHandle.name} แล้ว`);
+      } else {
+        const url = URL.createObjectURL(blob), anchor = document.createElement('a');
+        anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click();
+        setTimeout(() => { URL.revokeObjectURL(url); anchor.remove(); }, 1500);
+        toast(`ดาวน์โหลด ${item.sku} ครบ ${entries.length} รูปแล้ว`);
+      }
+    } catch (error) {
+      toast(`ดาวน์โหลดทุกรูป ${item.sku} ไม่สำเร็จ: ${error.message}`);
+      log(`⚠ ${item.sku} ดาวน์โหลดทุกรูป: ${error.message}`, 'error');
+    } finally {
+      item.galleryDownloading = false;
+      card?.classList.remove('busy');
+      renderGallery(item);
+    }
   }
 
   function compareMove(event) {
@@ -1094,6 +1145,7 @@
       const action = button.dataset.action;
       if (action === 'lock') { item.locked = !item.locked; refreshCard(item); }
       else if (action === 'select-gallery') await selectGallery(item, Number(button.dataset.index));
+      else if (action === 'download-gallery') await downloadGallery(item);
       else if (action === 'lightbox') openLightbox(item);
       else if (['trim', 'dicut', 'reset'].includes(action)) {
         try { await processItem(item, action); } catch (error) { toast(`${action} ไม่สำเร็จ: ${error.message}`); }

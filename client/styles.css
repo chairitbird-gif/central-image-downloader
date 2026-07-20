@@ -155,6 +155,7 @@ code { color:var(--ink); }
 .gallery-chip img { width:100%; height:100%; object-fit:contain; }
 .gallery-chip span { position:absolute; top:0; left:0; padding:0 4px; border-radius:0 0 4px; background:rgb(0 0 0 / 58%); color:#fff; font-size:.58rem; }
 .gallery-status { min-height:29px; display:inline-flex; align-items:center; padding:4px 8px; border:1px solid var(--field-line); border-radius:6px; background:var(--panel); color:var(--muted); font-size:.66rem; }
+.gallery-download-all { width:100%; min-height:36px; margin-top:7px; padding:6px 8px; font-size:.7rem; }
 .not-found-card { padding:15px; border:1px solid var(--line); border-radius:10px; background:var(--miss-bg); color:var(--miss); }
 .not-found-card strong { display:block; font-family:Consolas,Menlo,monospace; }
 .not-found-card span { display:block; margin-top:5px; font-size:.75rem; }
