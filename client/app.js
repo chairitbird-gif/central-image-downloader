@@ -331,6 +331,36 @@
     return url.href;
   }
 
+  async function fetchGalleryFromApi(item, signal) {
+    const slug = String(item.lookup?.record?.url_key || '').trim().toLowerCase();
+    if (!slug || !/^[a-z0-9-]+$/.test(slug)) return null;
+    try {
+      const response = await gatedFetch(
+        `/api/gallery?sku=${encodeURIComponent(item.sku)}&slug=${encodeURIComponent(slug)}`,
+        { headers: { Accept: 'application/json' }, signal, cache: 'no-store' }
+      );
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || !contentType.includes('application/json')) return null;
+      const data = await response.json();
+      if (!data.found || !Array.isArray(data.images) || !data.images.length) return null;
+      const urls = [];
+      for (const raw of data.images) {
+        let url;
+        try { url = new URL(raw); } catch (_) { return null; }
+        if (url.protocol !== 'https:' || url.hostname !== 'assets.central.co.th') return null;
+        if (!urls.includes(url.href)) urls.push(url.href);
+      }
+      // ให้ภาพที่ใช้เป็นภาพหลักอยู่ลำดับแรกเสมอ เพื่อให้ index ในการ์ดตรงกับที่แสดง
+      const baseIndex = urls.indexOf(item.baseUrl);
+      if (baseIndex > 0) { urls.splice(baseIndex, 1); urls.unshift(item.baseUrl); }
+      else if (baseIndex === -1) urls.unshift(item.baseUrl);
+      return urls;
+    } catch (error) {
+      if (error.name === 'AbortError') throw error;
+      return null;
+    }
+  }
+
   async function fetchImage(url, signal) {
     const response = await gatedFetch(url, { signal });
     if (!response.ok) return { response, blob: null };
@@ -819,24 +849,28 @@
     const signal = item.galleryController?.signal;
     item.galleryLoading = true; renderGallery(item);
     try {
-      const cacheKey = `${item.sku}|${item.baseUrl}`;
+      const cacheKey = `v2|${item.sku}|${item.baseUrl}`;
       const cached = await idbGet('gallery', cacheKey);
       if (item.disposed || signal?.aborted) return;
       if (Array.isArray(cached) && cached.length) {
         item.gallery = cached; item.galleryLoaded = true; return;
       }
-      if (!galleryUrl(item.baseUrl, 2)) {
-        item.gallery = [item.baseUrl]; item.galleryLoaded = true;
-        return;
-      }
-      const urls = [item.baseUrl];
-      for (let index = 2; index <= CONFIG.galleryMax; index += 1) {
-        const candidate = galleryUrl(item.baseUrl, index);
-        const response = await gatedFetch(candidate, { signal });
-        if (response.status === 404) break;
-        if (!response.ok) throw new Error(`gallery -${index} HTTP ${response.status}`);
-        urls.push(candidate);
-        try { await response.body?.cancel(); } catch (_) {}
+      let urls = await fetchGalleryFromApi(item, signal);
+      if (item.disposed || signal?.aborted) return;
+      if (!urls) {
+        if (!galleryUrl(item.baseUrl, 2)) {
+          item.gallery = [item.baseUrl]; item.galleryLoaded = true;
+          return;
+        }
+        urls = [item.baseUrl];
+        for (let index = 2; index <= CONFIG.galleryMax; index += 1) {
+          const candidate = galleryUrl(item.baseUrl, index);
+          const response = await gatedFetch(candidate, { signal });
+          if (response.status === 404) break;
+          if (!response.ok) throw new Error(`gallery -${index} HTTP ${response.status}`);
+          urls.push(candidate);
+          try { await response.body?.cancel(); } catch (_) {}
+        }
       }
       item.gallery = urls;
       item.galleryLoaded = true;
