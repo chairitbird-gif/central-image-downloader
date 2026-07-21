@@ -38,11 +38,13 @@
     if (!backdrop.classList.contains('open')) return;
     backdrop.classList.remove('open');
     backdrop.classList.add('closing');
+    // return focus before the exit animation, not inside it: for those 130ms the
+    // dialog is still on screen and a keyboard user would be left on nothing
+    const target = returnFocus && document.contains(returnFocus) ? returnFocus : launch;
+    returnFocus = null;
+    target.focus();
     const finish = () => {
       backdrop.classList.remove('closing');
-      const target = returnFocus && document.contains(returnFocus) ? returnFocus : launch;
-      returnFocus = null;
-      target.focus();
     };
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) finish();
     else closeTimer = setTimeout(finish, 130);
@@ -58,7 +60,15 @@
   };
   addEventListener('resize', syncLauncherOffset);
   addEventListener('scroll', syncLauncherOffset, { passive: true });
-  if ('ResizeObserver' in window) new ResizeObserver(syncLauncherOffset).observe(document.body);
+  addEventListener('load', syncLauncherOffset);
+  if ('ResizeObserver' in window) {
+    const observer = new ResizeObserver(syncLauncherOffset);
+    observer.observe(document.body);
+    // watch the obstructing elements themselves: a sticky footer can reach its final
+    // size and position without the body ever changing size, and one rAF after mount
+    // is too early to measure it
+    document.querySelectorAll('[data-feedback-obstruction]').forEach(element => observer.observe(element));
+  }
   requestAnimationFrame(syncLauncherOffset);
 
   async function compressImage(file) {
