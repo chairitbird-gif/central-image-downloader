@@ -186,12 +186,14 @@
     if (!versionModal.classList.contains('open')) return;
     versionModal.classList.remove('open');
     versionModal.classList.add('closing');
+    // return focus before the exit animation: a keyboard user must not be left on a
+    // control that is on its way out for the length of the transition
+    const target = versionReturnFocus && document.contains(versionReturnFocus) ? versionReturnFocus : document.getElementById('buildVersion');
+    versionReturnFocus = null;
+    target?.focus();
     const finish = () => {
       versionModal.classList.remove('closing');
       versionModal.setAttribute('aria-hidden', 'true');
-      const target = versionReturnFocus && document.contains(versionReturnFocus) ? versionReturnFocus : document.getElementById('buildVersion');
-      versionReturnFocus = null;
-      target?.focus();
     };
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) finish(); else setTimeout(finish, 130);
   }
