@@ -8,7 +8,8 @@
     <form><label class="feedback-field">ประเภท<select name="category"><option value="bug">พบปัญหา</option><option value="usability">ใช้งานยาก</option><option value="feature">อยากเพิ่มฟีเจอร์</option><option value="other">อื่น ๆ</option></select></label>
     <label class="feedback-field">รายละเอียด<textarea name="message" required maxlength="5000" placeholder="บอกสิ่งที่พบหรือสิ่งที่อยากให้ปรับ..."></textarea></label>
     <label class="feedback-field">ชื่อผู้ส่ง (ไม่บังคับ)<input name="sender" maxlength="120" placeholder="ชื่อหรือทีม"></label>
-    <div class="feedback-drop" tabindex="0"><strong>ลากรูปหรือ Screenshot มาวาง</strong><span>หรือคลิกเพื่อเลือกรูป สูงสุด 3 รูป รูปละ 5 MB</span><input type="file" accept="image/*" multiple hidden><div class="feedback-files"></div></div>
+    <div class="feedback-drop" tabindex="0"><strong>ลากรูปหรือ Screenshot มาวาง</strong><span>หรือคลิกเพื่อเลือกรูป หรือกด Ctrl+V วางรูปจากคลิปบอร์ด สูงสุด 3 รูป</span><input type="file" accept="image/*" multiple hidden></div>
+    <div class="feedback-files"></div><div class="feedback-files-status"></div>
     <div class="feedback-actions"><span class="feedback-result"></span><button class="feedback-submit" type="submit">ส่งข้อเสนอแนะ</button></div></form>
   </section></div>`;
   document.body.append(root);
@@ -19,6 +20,7 @@
   const drop = root.querySelector('.feedback-drop');
   const input = drop.querySelector('input');
   const filesLabel = root.querySelector('.feedback-files');
+  const filesStatus = root.querySelector('.feedback-files-status');
   const result = root.querySelector('.feedback-result');
   const submit = root.querySelector('.feedback-submit');
   let files = [];
@@ -71,12 +73,44 @@
     return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.webp', { type: 'image/webp' });
   }
 
-  const renderFiles = () => { filesLabel.textContent = files.length ? files.map(file => file.name).join(' • ') : ''; };
-  const setFiles = list => {
-    filesLabel.textContent = 'กำลังย่อรูป...';
-    Promise.all(Array.from(list).filter(file => file.type.startsWith('image/')).slice(0, 3).map(compressImage))
-      .then(output => { files = output; renderFiles(); })
-      .catch(error => { files = []; filesLabel.textContent = error.message; });
+  const MAX_FILES = 3;
+  const previewUrls = new Map();
+  const releasePreviews = keep => {
+    previewUrls.forEach((url, file) => { if (!keep.includes(file)) { URL.revokeObjectURL(url); previewUrls.delete(file); } });
+  };
+  const renderFiles = () => {
+    releasePreviews(files);
+    filesLabel.textContent = '';
+    files.forEach((file, index) => {
+      if (!previewUrls.has(file)) previewUrls.set(file, URL.createObjectURL(file));
+      const item = document.createElement('div');
+      item.className = 'feedback-thumb';
+      item.innerHTML = `<img alt="" src="${previewUrls.get(file)}"><button type="button" class="feedback-thumb-remove" aria-label="ลบรูปที่ ${index + 1}">×</button><span class="feedback-thumb-size">${Math.round(file.size / 1024)} KB</span>`;
+      item.querySelector('.feedback-thumb-remove').addEventListener('click', () => {
+        files = files.filter(entry => entry !== file);
+        renderFiles();
+        filesStatus.textContent = files.length ? `แนบแล้ว ${files.length} รูป` : '';
+        drop.focus();
+      });
+      filesLabel.append(item);
+    });
+  };
+  const addFiles = list => {
+    const incoming = Array.from(list).filter(file => file.type.startsWith('image/'));
+    if (!incoming.length) return;
+    const room = MAX_FILES - files.length;
+    if (room <= 0) { filesStatus.textContent = `แนบได้สูงสุด ${MAX_FILES} รูป ลบรูปเดิมก่อน`; return; }
+    const accepted = incoming.slice(0, room);
+    filesStatus.textContent = 'กำลังย่อรูป...';
+    Promise.all(accepted.map(compressImage))
+      .then(output => {
+        files = files.concat(output).slice(0, MAX_FILES);
+        renderFiles();
+        filesStatus.textContent = incoming.length > room
+          ? `แนบแล้ว ${files.length} รูป (เกิน ${MAX_FILES} รูป ส่วนที่เหลือถูกข้าม)`
+          : `แนบแล้ว ${files.length} รูป`;
+      })
+      .catch(error => { renderFiles(); filesStatus.textContent = error.message; });
   };
   launch.addEventListener('click', openDialog);
   close.addEventListener('click', closeDialog);
@@ -92,10 +126,19 @@
   });
   drop.addEventListener('click', () => input.click());
   drop.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') input.click(); });
-  input.addEventListener('change', () => setFiles(input.files));
+  input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
+  document.addEventListener('paste', event => {
+    if (!backdrop.classList.contains('open')) return;
+    const items = event.clipboardData && event.clipboardData.files;
+    if (!items || !items.length) return;
+    const images = Array.from(items).filter(file => file.type.startsWith('image/'));
+    if (!images.length) return;
+    event.preventDefault();
+    addFiles(images);
+  });
   ['dragenter', 'dragover'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add('drag'); }));
   ['dragleave', 'drop'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove('drag'); }));
-  drop.addEventListener('drop', event => setFiles(event.dataTransfer.files));
+  drop.addEventListener('drop', event => addFiles(event.dataTransfer.files));
   form.addEventListener('submit', async event => {
     event.preventDefault();
     submit.disabled = true; submit.classList.add('is-loading'); result.className = 'feedback-result'; result.textContent = 'กำลังส่ง...';
@@ -107,7 +150,7 @@
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'ส่งไม่สำเร็จ');
       result.className = 'feedback-result ok'; result.textContent = `ส่งแล้ว #${body.id.slice(0, 8)}`;
-      form.reset(); files = []; renderFiles();
+      form.reset(); files = []; renderFiles(); filesStatus.textContent = '';
     } catch (error) {
       result.className = 'feedback-result error'; result.textContent = error.message;
     } finally { submit.disabled = false; submit.classList.remove('is-loading'); }
