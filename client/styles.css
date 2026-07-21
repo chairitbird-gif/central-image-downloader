@@ -6,6 +6,9 @@
   --ok:#15803d; --ok-bg:#dcfce7; --warn:#a85a08; --warn-bg:#fef3c7;
   --miss:#5d6b7b; --miss-bg:#edf1f5; --log:#1d1b1b;
   --shadow:0 8px 26px rgba(20,20,24,.08);
+  /* Shared color tokens (CCT-0038 step 1): aliases only, no visual change yet */
+  --brand-accent:#f50a3c; --action-primary-bg:var(--red); --action-primary-fg:#fff;
+  --action-primary-bg-hover:var(--red-dark); --focus-ring:var(--focus);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Thai",sans-serif;
   font-size:14px;
 }
@@ -19,7 +22,10 @@
 :root[data-theme="dark"] { color-scheme:dark; --bg:#16171a; --panel:#1e2024; --ink:#eef0f2; --muted:#9a9fa8;
   --line:#33363c; --field:#25272c; --field-line:#33363c; --ok:#4ade80; --ok-bg:#14321f;
   --warn:#ffc366; --warn-bg:#45351f; --miss:#a8b5c5; --miss-bg:#252d36; --log:#111317;
-  --shadow:0 8px 28px rgba(0,0,0,.3); }
+  --shadow:0 8px 28px rgba(0,0,0,.3);
+  /* Shared color tokens (CCT-0038 step 1): dark slot, still aliased to light values */
+  --action-primary-bg:var(--red); --action-primary-fg:#fff;
+  --action-primary-bg-hover:var(--red-dark); --focus-ring:var(--focus); }
 :root[data-theme="light"] { color-scheme:light; }
 
 * { box-sizing:border-box; }
