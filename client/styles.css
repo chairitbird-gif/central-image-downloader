@@ -10,14 +10,16 @@
   /* ---- Shared color tokens (CCT-0038) ----
      brand-accent = graphic identity only, never a text background.
      action-* = interactive surfaces, contrast-checked against their own foreground.
-     border-decorative = dividers/cards; border-interactive = control boundaries (>=3:1). */
+     border-decorative = dividers/cards; border-interactive = control boundaries.
+     Accepted exception (CCT-0038): control boundaries stay at the thin decorative
+     value to keep the shipped visual density; the focus ring carries visibility. */
   --brand-accent:#f50a3c;
   --action-primary-bg:#c5002a; --action-primary-fg:#fff; --action-primary-bg-hover:#a30022;
   --action-success-bg:#146c43; --action-success-fg:#fff;
   --action-info-bg:#0b5ed7; --action-info-fg:#fff;
   --action-neutral-bg:#5c636a; --action-neutral-fg:#fff;
   --focus-ring:#2463eb;
-  --border-decorative:var(--line); --border-interactive:#767c85;
+  --border-decorative:var(--line); --border-interactive:var(--line);
   /* status colors stay separate from action colors on purpose */
   --status-success:var(--ok); --status-warning:var(--warn); --status-info:#0b5ed7; --status-neutral:var(--miss);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Thai",sans-serif;
@@ -30,27 +32,26 @@
     --warn:#ffc366; --warn-bg:#45351f; --miss:#a8b5c5; --miss-bg:#252d36; --log:#111317;
     --shadow:0 8px 28px rgba(0,0,0,.3);
     /* keep in sync with :root[data-theme="dark"] below */
-    --action-primary-bg:#ff4d6d; --action-primary-fg:#171719; --action-primary-bg-hover:#ff6b85;
+    --action-primary-bg:#e01235; --action-primary-fg:#fff; --action-primary-bg-hover:#c5002a;
     --action-success-bg:#2f9e6b; --action-success-fg:#0d1a14;
     --action-info-bg:#5b8bff; --action-info-fg:#101728;
     --action-neutral-bg:#8b9099; --action-neutral-fg:#16171a;
     --focus-ring:#5b8bff;
-    --border-decorative:var(--line); --border-interactive:#7c828b;
+    --border-decorative:var(--line); --border-interactive:var(--line);
     --status-success:var(--ok); --status-warning:var(--warn); --status-info:#5b8bff; --status-neutral:var(--miss); }
 }
 :root[data-theme="dark"] { color-scheme:dark; --bg:#16171a; --panel:#1e2024; --ink:#eef0f2; --muted:#9a9fa8;
   --line:#33363c; --field:#25272c; --field-line:#33363c; --ok:#4ade80; --ok-bg:#14321f;
   --warn:#ffc366; --warn-bg:#45351f; --miss:#a8b5c5; --miss-bg:#252d36; --log:#111317;
   --shadow:0 8px 28px rgba(0,0,0,.3);
-  /* Shared color tokens (CCT-0038) — dark theme inverts the primary action:
-     a bright red surface with dark text beats a dark red surface with white text
-     on both text contrast (5.57 vs 4.88) and boundary contrast (5.08 vs 3.07). */
-  --action-primary-bg:#ff4d6d; --action-primary-fg:#171719; --action-primary-bg-hover:#ff6b85;
+  /* Shared color tokens (CCT-0038) — dark primary action keeps white on red for
+     brand continuity; #e01235 is the lightest red that still clears 4.5:1 with white. */
+  --action-primary-bg:#e01235; --action-primary-fg:#fff; --action-primary-bg-hover:#c5002a;
   --action-success-bg:#2f9e6b; --action-success-fg:#0d1a14;
   --action-info-bg:#5b8bff; --action-info-fg:#101728;
   --action-neutral-bg:#8b9099; --action-neutral-fg:#16171a;
   --focus-ring:#5b8bff;
-  --border-decorative:var(--line); --border-interactive:#7c828b;
+  --border-decorative:var(--line); --border-interactive:var(--line);
   --status-success:var(--ok); --status-warning:var(--warn); --status-info:#5b8bff; --status-neutral:var(--miss); }
 :root[data-theme="light"] { color-scheme:light; }
 
