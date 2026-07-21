@@ -2,4 +2,4 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Content-Security-Policy: default-src 'self'; connect-src 'self' https://*.algolia.net https://assets.central.co.th; img-src 'self' blob: data: https://assets.central.co.th; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://*.algolia.net https://assets.central.co.th https://central-creative-feedback.pages.dev; img-src 'self' blob: data: https://assets.central.co.th; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
