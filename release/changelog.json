@@ -1,5 +1,13 @@
 [
   {
+    "version": "beta 1.15",
+    "date": "2026-07-22",
+    "changes": [
+      "เพิ่ม First Image เป็นเครื่องมือตัวที่ 4 ในเมนู Central Creative Tools",
+      "ปรับ breakpoint ของ Shared Header ให้ตรงกับเครื่องมืออื่นเมื่อมีเมนู 4 รายการ"
+    ]
+  },
+  {
     "version": "beta 1.11",
     "date": "2026-07-21",
     "changes": [
