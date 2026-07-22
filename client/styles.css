@@ -67,7 +67,7 @@ button:disabled { cursor:not-allowed; opacity:.5; }
 .topbar { display:flex; align-items:center; gap:28px; height:52px; padding:0 24px; background:#202124; color:#fff; border-bottom:1px solid rgb(255 255 255 / 6%); }
 .suite-brand { flex:0 0 260px; min-width:260px; display:flex; align-items:baseline; gap:6px; }
 .suite-kicker { font-size:14px; font-weight:720; letter-spacing:.2px; white-space:nowrap; }
-#buildVersion { display:inline-flex; align-items:baseline; min-width:78px; justify-content:flex-start; white-space:nowrap; font-size:11px; opacity:.6; font-weight:400; background:transparent!important; border:0!important; color:inherit; cursor:pointer; padding:0 2px; text-decoration:underline dotted; border-radius:0!important; box-shadow:none!important; }
+#buildVersion { display:inline-flex; align-items:center; min-width:78px; min-height:44px; justify-content:flex-start; white-space:nowrap; font-size:11px; opacity:.6; font-weight:400; background:transparent!important; border:0!important; color:inherit; cursor:pointer; padding:0 2px; text-decoration:underline dotted; border-radius:0!important; box-shadow:none!important; }
 .topbar h1,.topbar p { display:none; }
 .tool-nav { flex:1; display:flex; align-self:stretch; align-items:stretch; gap:6px; min-width:0; overflow-x:auto; scrollbar-width:none; }
 .tool-nav::-webkit-scrollbar { display:none; }
@@ -213,7 +213,6 @@ code { color:var(--ink); }
   .suite-brand { min-width:0; flex-basis:100%; }.topbar p { display:none; }
   .tool-nav { width:100%; margin-left:0; flex-wrap:wrap; overflow-x:visible; gap:6px 8px; }
   .tool-nav > * { flex:0 0 auto; }
-  #buildVersion { min-height:32px; align-items:center; }
   .tool-link,.theme-button { min-height:40px; }
   .theme-button { margin-left:auto; }
   .container { width:min(100% - 20px,1040px); margin-top:14px; }
