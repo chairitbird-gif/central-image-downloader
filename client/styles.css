@@ -208,7 +208,7 @@ code { color:var(--ink); }
 
 @media(prefers-reduced-motion:reduce){.tool-link,.theme-button,.version-modal,.version-dialog,.image-card,.image-card.busy .image-stage::after,.gallery-chip img,.stat,.source-note,.lightbox,.lightbox img,.toast,#progress-bar{animation:none!important;transition:none!important}}
 
-@media (max-width:720px) {
+@media (max-width:760px) {
   .topbar { height:auto; min-height:76px; padding:13px 16px; flex-wrap:wrap; gap:11px; }
   .suite-brand { min-width:0; flex-basis:100%; }.topbar p { display:none; }
   .tool-nav { width:100%; margin-left:0; flex-wrap:wrap; overflow-x:visible; gap:6px 8px; }
