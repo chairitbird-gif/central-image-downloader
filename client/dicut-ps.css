@@ -1,0 +1,57 @@
+/* Dicut PS install dialog — shipped as a file so it survives a page
+ * Content-Security-Policy with style-src 'self' and no 'unsafe-inline'.
+ * Canonical source: dicut-bridge/client/dicut-ps.css
+ */
+.dicut-ps-backdrop {position:fixed;inset:0;background:rgba(8,10,14,.62);display:flex;align-items:center;justify-content:center;padding:16px;z-index:1000;overflow:auto}
+.dicut-ps-backdrop[hidden] {display:none}
+.dicut-ps-dialog {background:#fff;color:#1b1f27;border-radius:12px;max-width:560px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:20px;box-shadow:0 18px 48px rgba(0,0,0,.35);font:13px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;animation:dicutPsIn 200ms cubic-bezier(.2,.7,.3,1) both}
+@keyframes dicutPsIn {from {opacity:0;transform:translateY(8px)}
+to {opacity:1;transform:none}
+}
+.dicut-ps-dialog h2 {margin:0 0 4px;font-size:16px}
+.dicut-ps-dialog p {margin:0 0 10px}
+.dicut-ps-dialog ol {margin:0 0 12px;padding-left:18px}
+.dicut-ps-dialog li {margin-bottom:6px}
+.dicut-ps-dialog code {display:block;background:#f1f3f7;border:1px solid #dfe3ea;border-radius:6px;padding:8px 10px;margin:6px 0;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+.dicut-ps-status {background:#fdf0f0;border:1px solid #f2c9c9;border-radius:8px;padding:8px 10px;margin:0 0 12px}
+.dicut-ps-tabs {display:flex;gap:8px;margin:0 0 12px}
+.dicut-ps-tab {min-height:44px;padding:0 14px;border-radius:8px;border:1px solid #d7dbe3;background:#f7f8fa;color:inherit;cursor:pointer;font:inherit}
+.dicut-ps-tab[aria-selected="true"] {background:#1b1f27;border-color:#1b1f27;color:#fff}
+.dicut-ps-actions {display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.dicut-ps-actions button {min-height:44px;padding:0 16px;border-radius:8px;border:1px solid #d7dbe3;background:#f7f8fa;color:inherit;cursor:pointer;font:inherit}
+.dicut-ps-actions .dicut-ps-primary {background:#1b1f27;border-color:#1b1f27;color:#fff}
+.dicut-ps-step-btn {min-height:44px;margin:6px 0;padding:0 16px;border-radius:8px;border:1px solid #d7dbe3;background:#f7f8fa;color:inherit;cursor:pointer;font:inherit;font-weight:700}
+.dicut-ps-step-btn.is-main {background:#1b1f27;border-color:#1b1f27;color:#fff}
+.dicut-ps-note {color:#6b7280;font-size:12px}
+@media (prefers-color-scheme:dark) {.dicut-ps-dialog {background:#191c22;color:#e8ebf0}
+.dicut-ps-dialog code {background:#22262e;border-color:#333944}
+.dicut-ps-status {background:#2a1d1f;border-color:#5a3134}
+.dicut-ps-note {color:#9aa2b1}
+.dicut-ps-tab,.dicut-ps-actions button,.dicut-ps-step-btn {background:#22262e;border-color:#333944}
+.dicut-ps-tab[aria-selected="true"],.dicut-ps-actions .dicut-ps-primary,.dicut-ps-step-btn.is-main {background:#e8ebf0;border-color:#e8ebf0;color:#191c22}
+}
+@media (prefers-reduced-motion:reduce) {.dicut-ps-dialog {animation:none}
+}
+
+/* Three of the four tools drive their theme with a data-theme attribute rather
+   than the OS setting, so the dialog has to follow that too. */
+:root[data-theme="dark"] .dicut-ps-dialog {background:#191c22;color:#e8ebf0}
+:root[data-theme="dark"] .dicut-ps-dialog code {background:#22262e;border-color:#333944}
+:root[data-theme="dark"] .dicut-ps-status {background:#2a1d1f;border-color:#5a3134}
+:root[data-theme="dark"] .dicut-ps-note {color:#9aa2b1}
+:root[data-theme="dark"] .dicut-ps-tab,
+:root[data-theme="dark"] .dicut-ps-actions button,
+:root[data-theme="dark"] .dicut-ps-step-btn {background:#22262e;border-color:#333944}
+:root[data-theme="dark"] .dicut-ps-tab[aria-selected="true"],
+:root[data-theme="dark"] .dicut-ps-actions .dicut-ps-primary,
+:root[data-theme="dark"] .dicut-ps-step-btn.is-main {background:#e8ebf0;border-color:#e8ebf0;color:#191c22}
+:root[data-theme="light"] .dicut-ps-dialog {background:#fff;color:#1b1f27}
+:root[data-theme="light"] .dicut-ps-dialog code {background:#f1f3f7;border-color:#dfe3ea}
+:root[data-theme="light"] .dicut-ps-status {background:#fdf0f0;border-color:#f2c9c9}
+:root[data-theme="light"] .dicut-ps-note {color:#6b7280}
+:root[data-theme="light"] .dicut-ps-tab,
+:root[data-theme="light"] .dicut-ps-actions button,
+:root[data-theme="light"] .dicut-ps-step-btn {background:#f7f8fa;border-color:#d7dbe3}
+:root[data-theme="light"] .dicut-ps-tab[aria-selected="true"],
+:root[data-theme="light"] .dicut-ps-actions .dicut-ps-primary,
+:root[data-theme="light"] .dicut-ps-step-btn.is-main {background:#1b1f27;border-color:#1b1f27;color:#fff}

@@ -471,16 +471,19 @@
   // dicutWhiteBlob this handles non-white and photographic backgrounds, so it
   // is a separate edit state rather than a replacement.
   async function dicutPsBlob(item) {
-    const result = await window.DicutPS.cut(item.currentBlob, `${item.sku}.png`);
+    // trim:false keeps Photoshop's result on the original canvas. Cropping both
+    // the cut and the source to the same bounds here is what makes the compare
+    // slider line up — a Photoshop-trimmed cutout has different dimensions from
+    // the image it came from, so the two halves showed unrelated framings.
+    const result = await window.DicutPS.cut(item.currentBlob, `${item.sku}.png`, { trim: false });
     const decoded = await decodeToCanvas(result.blob);
-    return {
-      blob: result.blob,
-      mime: 'image/png',
-      width: decoded.width,
-      height: decoded.height,
-      hasTransparency: true,
-      comparisonBlob: item.originalBlob
-    };
+    const source = await decodeToCanvas(item.currentBlob);
+    const pixels = decoded.context.getImageData(0, 0, decoded.width, decoded.height).data;
+    const bounds = findBounds(pixels, decoded.width, decoded.height, true);
+    if (!bounds) throw new Error('Photoshop ตัดพื้นแล้วไม่เหลือภาพ');
+    const output = await cropCanvas(decoded, bounds, 'image/png');
+    const comparison = await cropCanvas(source, bounds, item.mime);
+    return { ...output, mime: 'image/png', hasTransparency: true, comparisonBlob: comparison.blob };
   }
 
   function revokeItemUrls(item) {
