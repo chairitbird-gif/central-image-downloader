@@ -467,6 +467,22 @@
     return { ...output, mime: 'image/png', hasTransparency: true, comparisonBlob: comparison.blob };
   }
 
+  // Photoshop "Remove Background" through the local Dicut PS Bridge. Unlike
+  // dicutWhiteBlob this handles non-white and photographic backgrounds, so it
+  // is a separate edit state rather than a replacement.
+  async function dicutPsBlob(item) {
+    const result = await window.DicutPS.cut(item.currentBlob, `${item.sku}.png`);
+    const decoded = await decodeToCanvas(result.blob);
+    return {
+      blob: result.blob,
+      mime: 'image/png',
+      width: decoded.width,
+      height: decoded.height,
+      hasTransparency: true,
+      comparisonBlob: item.originalBlob
+    };
+  }
+
   function revokeItemUrls(item) {
     for (const key of ['originalUrl', 'currentUrl', 'comparisonUrl']) {
       if (item[key]) URL.revokeObjectURL(item[key]);
@@ -543,6 +559,7 @@
         <div class="card-actions">
           <button class="button trim" type="button" data-action="trim" data-sku="${escapeHtml(item.sku)}" aria-pressed="false">🔲 Trim</button>
           <button class="button dicut" type="button" data-action="dicut" data-sku="${escapeHtml(item.sku)}" aria-pressed="false">✂️ Dicut</button>
+          <button class="button dicut-ps" type="button" data-action="dicutps" data-sku="${escapeHtml(item.sku)}" aria-pressed="false">🎯 Dicut PS</button>
           <button class="button secondary" type="button" data-action="reset" data-sku="${escapeHtml(item.sku)}" aria-pressed="true">↺ ต้นฉบับ</button>
         </div>
         <div class="gallery">
@@ -574,7 +591,7 @@
     lockButton.setAttribute('aria-pressed', String(item.locked));
     lockButton.setAttribute('aria-label', item.locked ? 'ปลดล็อกรูปนี้ให้ทำงานแบบกลุ่มได้' : 'ล็อกรูปนี้เพื่อให้การทำงานแบบกลุ่มข้าม');
     lockButton.title = item.locked ? 'ปลดล็อกเพื่อให้ Batch ทำรูปนี้' : 'ล็อกเพื่อให้ Batch ข้ามรูปนี้';
-    const stateLabels = { original: 'ต้นฉบับ', trim: 'Trim แล้ว', dicut: 'Dicut แล้ว' };
+    const stateLabels = { original: 'ต้นฉบับ', trim: 'Trim แล้ว', dicut: 'Dicut แล้ว', dicutps: 'Dicut PS แล้ว' };
     const editState = item.editState || 'original';
     const stateBadge = $('.edit-state', card);
     stateBadge.textContent = stateLabels[editState];
@@ -588,7 +605,7 @@
     sourceNote.title = fromCache && item.lookup.verifiedAt
       ? `ใช้ URL สำรองที่ระบบยืนยันล่าสุด ${new Date(item.lookup.verifiedAt).toLocaleString('th-TH')}`
       : 'ค้นพบ SKU จากระบบหลักในรอบนี้';
-    for (const action of ['trim', 'dicut', 'reset']) {
+    for (const action of ['trim', 'dicut', 'dicutps', 'reset']) {
       const button = $(`[data-action="${action}"]`, card);
       const active = (action === 'reset' && editState === 'original') || action === editState;
       button.setAttribute('aria-pressed', String(active));
@@ -821,28 +838,37 @@
       if (action === 'reset') resetItem(item);
       else if (action === 'trim') replaceCurrent(item, await trimBlob(item), false, 'trim');
       else if (action === 'dicut') replaceCurrent(item, await dicutWhiteBlob(item), true, 'dicut');
+      else if (action === 'dicutps') replaceCurrent(item, await dicutPsBlob(item), true, 'dicutps');
       await autoSaveItem(item);
     } finally { card?.classList.remove('busy'); }
   }
 
-  async function processBatch(action) {
+  const ACTION_LABELS = { trim: 'Trim', dicut: 'Dicut', dicutps: 'Dicut PS', reset: 'คืนต้นฉบับ' };
+
+  async function processBatch(action, trigger) {
     if (state.processing) return;
     const targets = state.order.map((sku) => state.items.get(sku)).filter((item) => item && !item.locked);
     if (!targets.length) { toast('ไม่มีรูปที่ปลดล็อกให้ประมวลผล'); return; }
+    // Dicut PS needs the local bridge; a missing bridge opens the install
+    // dialog instead of failing once per image.
+    if (action === 'dicutps' && !(await window.DicutPS.ensureReady(trigger))) return;
     state.processing = true;
     $$('[data-batch-action]').forEach((button) => { button.disabled = true; });
     let done = 0;
     try {
+      const label = ACTION_LABELS[action] || action;
       for (const item of targets) {
-        els.processStatus.textContent = `${action} ${done + 1}/${targets.length}`;
+        els.processStatus.textContent = `${label} ${done + 1}/${targets.length} · ${item.sku}`;
         try { await processItem(item, action); done += 1; }
-        catch (error) { log(`⚠ ${item.sku} ${action}: ${error.message}`, 'error'); }
+        catch (error) { log(`⚠ ${item.sku} ${label}: ${error.message}`, 'error'); }
       }
     } finally {
+      const label = ACTION_LABELS[action] || action;
       state.processing = false;
       $$('[data-batch-action]').forEach((button) => { button.disabled = false; });
+      const skipped = targets.length - done;
       els.processStatus.textContent = `เสร็จ ${done}/${targets.length}`;
-      toast(`${action} เสร็จ ${done} รูป`);
+      toast(skipped ? `${label} เสร็จ ${done} รูป · ข้าม ${skipped} รูป` : `${label} เสร็จ ${done} รูป`);
     }
   }
 
@@ -1268,7 +1294,7 @@
       }
     });
 
-    $$('[data-batch-action]').forEach((button) => button.addEventListener('click', () => processBatch(button.dataset.batchAction)));
+    $$('[data-batch-action]').forEach((button) => button.addEventListener('click', () => processBatch(button.dataset.batchAction, button)));
 
     els.imageGrid.addEventListener('click', async (event) => {
       const button = event.target.closest('[data-action]');
@@ -1280,8 +1306,10 @@
       else if (action === 'select-gallery') await selectGallery(item, Number(button.dataset.index));
       else if (action === 'download-gallery') await downloadGallery(item);
       else if (action === 'lightbox') openLightbox(item);
-      else if (['trim', 'dicut', 'reset'].includes(action)) {
-        try { await processItem(item, action); } catch (error) { toast(`${action} ไม่สำเร็จ: ${error.message}`); }
+      else if (['trim', 'dicut', 'dicutps', 'reset'].includes(action)) {
+        const label = ACTION_LABELS[action] || action;
+        if (action === 'dicutps' && !(await window.DicutPS.ensureReady(button))) return;
+        try { await processItem(item, action); } catch (error) { toast(`${label} ไม่สำเร็จ: ${error.message}`); }
       }
     });
     els.skuInput.addEventListener('dragover', (event) => { event.preventDefault(); els.skuInput.classList.add('dragging'); });

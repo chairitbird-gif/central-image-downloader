@@ -114,6 +114,9 @@ textarea.dragging { border-color:var(--action-info-bg); border-style:dashed; bac
 .button.success { background:var(--action-success-bg); color:var(--action-success-fg); }
 .button.trim { background:var(--action-neutral-bg); color:var(--action-neutral-fg); }
 .button.dicut { background:var(--action-info-bg); color:var(--action-info-fg); }
+/* Dicut PS is the same family of action as Dicut, so it reuses the info role
+   and is told apart by its inset outline plus its own label and icon. */
+.button.dicut-ps { background:var(--action-info-bg); color:var(--action-info-fg); box-shadow:inset 0 0 0 2px var(--action-info-fg); }
 
 .compact-field { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:.84rem; }
 select,input[type="text"] { min-height:38px; padding:7px 9px; border:1.5px solid var(--border-interactive); border-radius:8px; outline:none; background:var(--field); color:var(--ink); }
@@ -179,10 +182,11 @@ code { color:var(--ink); }
 .image-info { min-width:0; color:var(--muted); font-size:.68rem; }
 .edit-state { flex:none; padding:3px 6px; border-radius:99px; background:var(--miss-bg); color:var(--miss); font-size:.6rem; font-weight:800; }
 .edit-state[data-state="trim"] { background:#e5e7eb; color:#4b5563; }
-.edit-state[data-state="dicut"] { background:#dbeafe; color:#1d4ed8; }
+.edit-state[data-state="dicut"], .edit-state[data-state="dicutps"] { background:#dbeafe; color:#1d4ed8; }
 :root[data-theme="dark"] .edit-state[data-state="trim"] { background:#374151; color:#e5e7eb; }
-:root[data-theme="dark"] .edit-state[data-state="dicut"] { background:#172554; color:#93c5fd; }
-.card-actions { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:7px; }
+:root[data-theme="dark"] .edit-state[data-state="dicut"],
+:root[data-theme="dark"] .edit-state[data-state="dicutps"] { background:#172554; color:#93c5fd; }
+.card-actions { display:grid; grid-template-columns:repeat(2,1fr); gap:5px; margin-top:7px; }
 .card-actions .button { min-height:44px; padding:6px 3px; font-size:.68rem; }
 .card-actions .button.active-state { box-shadow:inset 0 0 0 2px currentColor,0 0 0 1px var(--panel); }
 .gallery { margin-top:8px; }
