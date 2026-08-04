@@ -1,7 +1,7 @@
 {
-  "version": "beta 1.19",
+  "version": "beta 1.20",
   "date": "2026-08-04",
-  "hash": "84963b4",
+  "hash": "4ccd41d",
   "renderer": "browser",
   "changes": [
     "แก้ตัวช่วย Dicut PS Bridge บน Windows ที่ติดตั้งแล้วดับทันที ทำให้กดปุ่มแล้วขึ้นว่าเชื่อมต่อไม่ได้ตลอด",
@@ -9,7 +9,7 @@
   ],
   "changelog": [
     {
-      "version": "beta 1.19",
+      "version": "beta 1.20",
       "date": "2026-08-04",
       "changes": [
         "แก้ตัวช่วย Dicut PS Bridge บน Windows ที่ติดตั้งแล้วดับทันที ทำให้กดปุ่มแล้วขึ้นว่าเชื่อมต่อไม่ได้ตลอด",
