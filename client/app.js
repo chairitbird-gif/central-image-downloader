@@ -1086,6 +1086,11 @@
     } catch (error) { toast(`สร้าง ZIP ไม่สำเร็จ: ${error.message}`); }
   }
 
+  async function directoryPermissionState() {
+    if (!state.directoryHandle) return null;
+    try { return await state.directoryHandle.queryPermission({ mode: 'readwrite' }); } catch (_) { return null; }
+  }
+
   async function ensureDirectoryPermission(interactive) {
     if (!state.directoryHandle) return false;
     const options = { mode: 'readwrite' };
@@ -1099,10 +1104,23 @@
   async function chooseFolder() {
     if (!('showDirectoryPicker' in window)) { toast('เบราว์เซอร์นี้ไม่รองรับ Folder — ใช้ ZIP แทน'); return; }
     try {
-      if (state.directoryHandle && await ensureDirectoryPermission(true)) { updateFolderUi(); return; }
-      state.directoryHandle = await showDirectoryPicker({ mode: 'readwrite' });
-      await idbPut('handles', 'directory', state.directoryHandle);
+      // สิทธิ์หมดอายุ (prompt) ขออนุญาต Folder เดิมก่อน กดครั้งเดียวจบ; ถ้าไม่อนุญาตต้องหยุด
+      // เพราะ requestPermission กิน user activation ทำให้ showDirectoryPicker ต่อท้ายไม่ได้
+      if (await directoryPermissionState() === 'prompt') {
+        if (await ensureDirectoryPermission(true)) {
+          updateFolderUi();
+          toast(`ใช้ Folder ${state.directoryHandle.name} ต่อได้แล้ว`);
+          return;
+        }
+        toast('ยังไม่ได้อนุญาต — กดปุ่ม Folder อีกครั้งเพื่อเลือก Folder ใหม่');
+        return;
+      }
+      // granted / denied / ยังไม่เคยเลือก: เปิด picker เสมอ ผู้ใช้จึงเปลี่ยน Folder ได้
+      const handle = await showDirectoryPicker({ mode: 'readwrite' });
+      state.directoryHandle = handle;
+      await idbPut('handles', 'directory', handle);
       updateFolderUi();
+      toast(`ใช้ Folder ${handle.name} แล้ว`);
     } catch (error) { if (error.name !== 'AbortError') toast(`เลือก Folder ไม่สำเร็จ: ${error.message}`); }
   }
 
@@ -1115,7 +1133,7 @@
       els.autoSaveLabel.textContent = '💾 เตรียมภาพสำหรับบันทึก ZIP';
     } else if (state.directoryHandle) {
       els.folderName.textContent = `📁 ${state.directoryHandle.name}`;
-      els.folderHelp.textContent = 'ถ้าสิทธิ์หมด ให้กดปุ่ม Folder เพื่ออนุญาตอีกครั้ง';
+      els.folderHelp.textContent = 'กดปุ่ม Folder เพื่อเปลี่ยน Folder หรืออนุญาตอีกครั้งเมื่อสิทธิ์หมด';
     } else {
       els.folderName.textContent = 'ยังไม่ได้เลือก Folder';
       els.folderHelp.textContent = 'เลือกโฟลเดอร์ย่อย เช่น Documents\\central — ห้ามเลือก root Documents/Downloads';
