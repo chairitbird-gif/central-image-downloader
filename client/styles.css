@@ -19,7 +19,7 @@
   --action-success-bg:var(--green); --action-success-fg:#fff;
   --action-info-bg:var(--blue); --action-info-fg:#fff;
   --action-neutral-bg:#6c757d; --action-neutral-fg:#fff;
-  --focus-ring:var(--focus);
+  --focus-ring:#f50a3c;
   --border-decorative:var(--line); --border-interactive:var(--line);
   /* status colors stay separate from action colors on purpose */
   --status-success:var(--ok); --status-warning:var(--warn); --status-info:var(--blue); --status-neutral:var(--miss);
@@ -39,7 +39,7 @@
     --action-success-bg:var(--green); --action-success-fg:#fff;
     --action-info-bg:var(--blue); --action-info-fg:#fff;
     --action-neutral-bg:#6c757d; --action-neutral-fg:#fff;
-    --focus-ring:var(--focus);
+    --focus-ring:#f50a3c;
     --border-decorative:var(--line); --border-interactive:var(--line);
     --status-success:var(--ok); --status-warning:var(--warn); --status-info:var(--blue); --status-neutral:var(--miss); }
 }
@@ -52,7 +52,7 @@
   --action-success-bg:var(--green); --action-success-fg:#fff;
   --action-info-bg:var(--blue); --action-info-fg:#fff;
   --action-neutral-bg:#6c757d; --action-neutral-fg:#fff;
-  --focus-ring:var(--focus);
+  --focus-ring:#f50a3c;
   --border-decorative:var(--line); --border-interactive:var(--line);
   --status-success:var(--ok); --status-warning:var(--warn); --status-info:var(--blue); --status-neutral:var(--miss); }
 :root[data-theme="light"] { color-scheme:light; }
