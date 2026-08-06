@@ -23,7 +23,9 @@
   --border-decorative:var(--line); --border-interactive:var(--line);
   /* status colors stay separate from action colors on purpose */
   --status-success:var(--ok); --status-warning:var(--warn); --status-info:var(--blue); --status-neutral:var(--miss);
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Thai",sans-serif;
+  /* UI font-family comes from ui-base.css. font-size stays here: this file sizes 32 things
+     in rem, so :root is the rem base. Dropping it would fall back to the browser default
+     16px and quietly enlarge every one of them. */
   font-size:14px;
 }
 
