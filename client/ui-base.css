@@ -1,0 +1,242 @@
+/* Central Creative Tools — shared UI base.
+   Canonical file: shared/ui-base.css at the coordination root (DECISIONS.md ADR-011).
+   Contract: docs/contracts/SHARED_UI_BASE.md
+
+   Do NOT edit the copies inside the tool repositories. Edit this file, then run
+   `python shared/tools/sync_ui_base.py` and make `--check` pass before any release.
+
+   Load order matters: every tool links this file BEFORE its own stylesheet, so a
+   tool that still carries its own rule keeps winning until that rule is removed.
+   That is what makes the migration safe to do one layer at a time.
+
+   Nothing here may reach an artwork surface. `.artboard`, every `<canvas>` and any
+   unthemed output region are excluded by contract — their colours and fonts belong
+   to the delivered artwork, not to the UI. See COLOR_SYSTEM.md. */
+
+:root {
+  /* Canonical token names. A tool may override the VALUES in its own stylesheet,
+     but the NAMES are shared: copying CSS between tools has to keep working. */
+  --bg: #f3f4f6;
+  --panel: #fff;
+  --panel-raised: #fff;
+  --ink: #171719;
+  --muted: #696970;
+  --line: #dedee3;
+
+  --brand-accent: #f50a3c;
+  --focus-ring: #f50a3c;
+  /* --selection is deliberately NOT --focus-ring. It is the "this is what you have
+     selected" colour inside an editor, and it must not collide with danger or with
+     a colour used in the artwork itself. Tools that have no selection state ignore it. */
+  --selection: #2463eb;
+
+  --action-primary-bg: #f50a3c;
+  --action-primary-fg: #fff;
+  --action-primary-bg-hover: #c5002a;
+
+  --border-decorative: var(--line);
+  --border-interactive: var(--line);
+  --btn-hover: #f3f5f7;
+
+  /* Motion, per MOTION_SYSTEM.md */
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 240ms;
+  --ease-out: cubic-bezier(.2, .7, .3, 1);
+  --ease-in: cubic-bezier(.5, 0, .8, .4);
+
+  /* Layer scale, per RESPONSIVE_LAYOUT.md. Use these instead of literal numbers so
+     the order stays reviewable in one place. 80 belongs to the feedback widget and
+     is not listed here: that file ships its own value and must not be re-pointed. */
+  --z-sticky-content: 10;
+  --z-floating-action: 20;
+  --z-menu: 40;
+  --z-app-chrome: 50;
+  --z-launcher: 60;
+  --z-toast: 65;
+  --z-modal: 70;
+}
+
+/* ---- base ---- */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+:where(button, input, select, textarea, a, canvas, [contenteditable]):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  /* The offset is what keeps a red ring readable on a red primary button: the ring
+     lands on the surface around the control, never on the control itself. */
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* ---- buttons ----
+   Class, never the bare `button` element. Central 1st Image packs 17px controls onto
+   a 450x600 artboard; a shared min-height on `button` would inflate them and shove the
+   artwork around. Opting in per button keeps artwork controls untouched. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-interactive);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 650;
+  transition: transform var(--dur-1) var(--ease-out),
+              background var(--dur-1) var(--ease-out),
+              border-color var(--dur-1) var(--ease-out);
+}
+.btn:hover:not(:disabled) { background: var(--btn-hover); }
+.btn:active:not(:disabled) { transform: scale(.97); }
+.btn:disabled { opacity: .45; }
+.btn.small { min-height: 30px; padding: 5px 9px; font-size: 13px; }
+.btn.primary {
+  background: var(--action-primary-bg);
+  border-color: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+.btn.primary:hover:not(:disabled) {
+  background: var(--action-primary-bg-hover);
+  border-color: var(--action-primary-bg-hover);
+}
+
+/* ---- fields ---- */
+
+.field {
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-interactive);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+/* ---- dialog shell ----
+   The changelog modal (.version-modal / .version-dialog) belongs to SHARED_HEADER.md.
+   Application dialogs use these classes instead, so editing the header never reaches
+   a dialog that is part of somebody's actual work. */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(10 11 13 / 72%);
+}
+.dialog-backdrop.open, .dialog-backdrop.closing { display: flex; }
+.dialog {
+  width: min(420px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 20px 60px #0006;
+  text-align: left;
+}
+.dialog-title { display: block; font-size: 18px; font-weight: 700; }
+.dialog-body { margin: 10px 0; font-size: 13px; line-height: 1.55; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+.dialog-backdrop.open { animation: cctFadeIn var(--dur-2) var(--ease-out) both; }
+.dialog-backdrop.open .dialog { animation: cctDialogIn var(--dur-2) var(--ease-out) both; }
+.dialog-backdrop.closing { animation: cctFadeOut var(--dur-1) var(--ease-in) both; }
+.dialog-backdrop.closing .dialog { animation: cctDialogOut var(--dur-1) var(--ease-in) both; }
+
+@keyframes cctFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cctFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes cctDialogIn {
+  from { opacity: 0; transform: translateY(6px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes cctDialogOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(4px) scale(.99); }
+}
+
+/* ---- toast ----
+   Bottom left in every tool. It is the only free corner: bottom right is taken by the
+   feedback launcher and the floating ZIP button, top right by the export-cancel button
+   and the zoom close button. */
+
+.toast-dock {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: var(--z-toast);
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #1f2126;
+  color: #fff;
+  box-shadow: 0 10px 30px #0006;
+  pointer-events: auto;
+}
+.toast-action {
+  min-height: 30px;
+  padding: 2px 10px;
+  border: 1px solid #5b6068;
+  border-radius: 6px;
+  background: transparent;
+  color: #9dc0ff;
+  font-weight: 700;
+}
+.toast-action:hover { background: #2c3038; }
+.toast-close {
+  width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #c7cad1;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ---- reduced motion ---- */
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .dialog-backdrop,
+  .dialog,
+  .toast {
+    animation: none !important;
+    transition: none !important;
+  }
+}
