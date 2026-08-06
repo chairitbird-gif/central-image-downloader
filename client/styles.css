@@ -106,7 +106,8 @@ textarea.dragging { border-color:var(--action-info-bg); border-style:dashed; bac
 
 .control-row,.folder-row,.prefix-row,.summary-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
 .control-row { margin-top:13px; }
-.button { min-height:40px; padding:9px 18px; border:1px solid transparent; border-radius:8px; font-weight:700; color:var(--ink); background:var(--field); transition:transform .08s,border-color .15s,background .15s; }
+.button { min-height:40px; padding:9px 18px; border:1px solid transparent; border-radius:7px; font-weight:700; color:var(--ink); background:var(--field); transition:transform .08s,border-color .15s,background .15s; }
+.button:active:not(:disabled) { transform:scale(.97); }
 .button:active:not(:disabled) { transform:scale(.98); }
 .button.primary { background:var(--action-primary-bg); color:var(--action-primary-fg); }
 .button.primary:hover { background:var(--action-primary-bg-hover); }
