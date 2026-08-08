@@ -1309,7 +1309,9 @@
     document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeLightbox(); });
     // Shared shortcut contract: Ctrl/Cmd+Shift+S = primary export (start download).
     document.addEventListener('keydown', (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === 's' || event.key === 'S')) {
+      // The letter comes from the physical key: on a Thai layout event.key for S is 'ห' and this
+      // shortcut silently stopped working (CCT-0123).
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && shortcutKey(event) === 's') {
         event.preventDefault();
         if (!els.download.disabled) els.download.click();
       }
