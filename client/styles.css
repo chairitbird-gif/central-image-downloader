@@ -13,7 +13,8 @@
      border-decorative = dividers/cards; border-interactive = control boundaries.
      Accepted exception (CCT-0038): control boundaries stay at the thin decorative
      value to keep the shipped visual density; the focus ring carries visibility.
-     Contrast gaps recorded in docs/qa/CCT-0025/BACKLOG.md are NOT closed. */
+     Numeric contrast targets were dropped from the colour contract by Bird (ADR-008); the
+     backlog they came from is closed and kept only as history. */
   --brand-accent:#f50a3c;
   --action-primary-bg:var(--red); --action-primary-fg:#fff; --action-primary-bg-hover:var(--red-dark);
   --action-success-bg:var(--green); --action-success-fg:#fff;
