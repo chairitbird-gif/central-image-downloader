@@ -1,5 +1,13 @@
 [
   {
+    "version": "beta 1.25",
+    "date": "2026-08-11",
+    "changes": [
+      "อัปเดต Dicut PS Bridge 1.1.7 ให้กลับไปใช้ COM flow ที่พิสูจน์แล้วจาก Dicut เดิม พร้อม cold/warm retry",
+      "Dicut PS รักษาชนิดไฟล์ WebP, TIFF และ JPEG ได้แม้ source server ตอบ application/octet-stream"
+    ]
+  },
+  {
     "version": "beta 1.24",
     "date": "2026-08-09",
     "changes": [
