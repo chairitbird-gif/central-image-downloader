@@ -17,7 +17,7 @@
   'use strict';
   if (window.DicutPS) return;
 
-  var VERSION = '1.1.8';
+  var VERSION = '1.1.9';
   // The bridge lives on the user's machine and is not updated by a site deploy,
   // so the client has to notice an old one and send them back to the installer.
   var REQUIRED_BRIDGE = '1.1.7';
@@ -25,7 +25,12 @@
   // document.currentScript is only readable while the script is executing, and
   // the stylesheet sits next to this file whatever path a tool serves it from.
   var SCRIPT_URL = (document.currentScript && document.currentScript.src) || '';
-  var PROBE_TIMEOUT_MS = 2500;
+  // An https page reaches 127.0.0.1 only after Chrome's loopback permission is granted, and Chrome
+  // asks by holding the request open until the user answers its popup. A short timeout aborts that
+  // request while the popup is still on screen and reports a missing install, so the probe waits
+  // long enough for a person to read the popup and click Allow. A machine with no bridge at all
+  // still fails immediately: the connection is refused rather than left hanging.
+  var PROBE_TIMEOUT_MS = 20000;
   var CUT_TIMEOUT_MS = 240000;   // Photoshop's first launch can take minutes
   var PROBE_TTL_OK_MS = 15000;
   var PROBE_TTL_FAIL_MS = 3000;
@@ -40,6 +45,18 @@
   // ---------------------------------------------------------------- helpers
   function isMac() {
     return /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent || '');
+  }
+
+  // Chrome keeps two separate permissions per site: the "Local network access" switch in Site
+  // settings, which navigator.permissions reports, and a loopback permission that is the one
+  // 127.0.0.1 actually needs and that only its own popup can grant. Ignore that popup a few times
+  // and Chrome embargoes the site — every request then fails instantly with no popup at all, and
+  // only Reset permissions brings it back. A refused connection looks the same from here, so both
+  // causes are named instead of blaming the install.
+  var LOOPBACK_HINT = 'ถ้าติดตั้งแล้วแต่ยังขึ้นข้อความนี้ แปลว่า Chrome ยังไม่อนุญาตให้หน้านี้เข้า 127.0.0.1 · กดไอคอนซ้ายช่อง URL > Reset permissions แล้วโหลดหน้าใหม่และกดปุ่มอีกครั้ง จะมีป็อปอัพขอสิทธิ์ ให้กด Allow ทันที (สวิตช์ Local network access ใน Site settings คนละตัวกัน ไม่พอ)';
+
+  function withLoopbackHint(message) {
+    return location.protocol === 'https:' ? message + ' · ' + LOOPBACK_HINT : message;
   }
 
   function fetchWithTimeout(url, options, timeoutMs) {
@@ -167,7 +184,7 @@
           stale: false,
           error: error && error.name === 'AbortError'
             ? 'ต่อ Dicut PS Bridge ไม่ทัน (timeout)'
-            : 'ยังไม่ได้เปิด Dicut PS Bridge บนเครื่องนี้'
+            : withLoopbackHint('ยังไม่ได้เปิด Dicut PS Bridge บนเครื่องนี้')
         };
       })
       .then(function (value) {
@@ -207,7 +224,7 @@
     }).catch(function (error) {
       probeCache = null;  // a failure may mean the bridge died: re-probe next time
       if (error && error.name === 'AbortError') throw new Error('ยกเลิกหรือรอ Photoshop นานเกินกำหนด');
-      if (error instanceof TypeError) throw new Error('ติดต่อ Dicut PS Bridge ไม่ได้ — ตรวจว่าเปิดอยู่หรือยัง');
+      if (error instanceof TypeError) throw new Error(withLoopbackHint('ติดต่อ Dicut PS Bridge ไม่ได้ — ตรวจว่าเปิดอยู่หรือยัง'));
       throw error;
     });
   }
@@ -534,7 +551,7 @@
     buildHelp();
     helpReturnFocus = trigger || document.activeElement;
     helpNodes.title.textContent = isUpdate ? 'ต้องอัปเดต Dicut PS Bridge' : 'Dicut PS ยังใช้ไม่ได้';
-    helpNodes.status.textContent = message || 'ยังไม่ได้เปิด Dicut PS Bridge บนเครื่องนี้';
+    helpNodes.status.textContent = message || withLoopbackHint('ยังไม่ได้เปิด Dicut PS Bridge บนเครื่องนี้');
     selectPlatform(isMac() ? 'mac' : 'windows');
     helpNodes.backdrop.hidden = false;
     helpNodes.dialog.focus();
