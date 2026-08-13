@@ -1,7 +1,7 @@
 {
   "version": "beta 1.26",
   "date": "2026-08-13",
-  "hash": "a836226",
+  "hash": "9d7b506",
   "renderer": "browser",
   "changes": [
     "ตรวจ Dicut PS Bridge รอจนผู้ใช้กด Allow ที่ป็อปอัพขอสิทธิ์ของ Chrome ทัน แทนที่จะสรุปว่ายังไม่ได้ติดตั้ง",
