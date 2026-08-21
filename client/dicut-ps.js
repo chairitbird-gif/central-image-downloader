@@ -17,7 +17,7 @@
   'use strict';
   if (window.DicutPS) return;
 
-  var VERSION = '1.2.0';
+  var VERSION = '1.2.1';
   // The bridge lives on the user's machine and is not updated by a site deploy,
   // so the client has to notice an old one and send them back to the installer.
   var REQUIRED_BRIDGE = '1.1.7';
@@ -192,7 +192,7 @@
           busy: false,
           stale: false,
           error: error && error.name === 'AbortError'
-            ? 'ต่อ Dicut PS Bridge ไม่ทัน (timeout)'
+            ? withLoopbackHint('ต่อ Dicut PS Bridge ไม่ทัน (timeout)')
             : withLoopbackHint('ยังไม่ได้เปิด Dicut PS Bridge บนเครื่องนี้')
         };
       })
