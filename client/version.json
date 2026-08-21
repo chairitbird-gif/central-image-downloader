@@ -1,7 +1,7 @@
 {
   "version": "beta 1.27",
   "date": "2026-08-21",
-  "hash": "b67b845",
+  "hash": "545a8d2",
   "renderer": "browser",
   "changes": [
     "เพิ่มสถานะ Dicut PS ใน Header ตรวจ Bridge และ Photoshop อัตโนมัติ พร้อมกดดูรายละเอียด ตรวจใหม่ และเปิดวิธีแก้เมื่อยังไม่พร้อม"
