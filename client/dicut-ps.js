@@ -17,14 +17,23 @@
   'use strict';
   if (window.DicutPS) return;
 
-  var VERSION = '1.1.9';
+  var VERSION = '1.2.0';
   // The bridge lives on the user's machine and is not updated by a site deploy,
   // so the client has to notice an old one and send them back to the installer.
   var REQUIRED_BRIDGE = '1.1.7';
   var ENDPOINT = 'http://127.0.0.1:8799';
   // document.currentScript is only readable while the script is executing, and
   // the stylesheet sits next to this file whatever path a tool serves it from.
-  var SCRIPT_URL = (document.currentScript && document.currentScript.src) || '';
+  var SCRIPT_ELEMENT = document.currentScript;
+  var SCRIPT_URL = (SCRIPT_ELEMENT && SCRIPT_ELEMENT.src) || '';
+  var EXTENSION_CONFIG = {
+    name: (SCRIPT_ELEMENT && SCRIPT_ELEMENT.getAttribute('data-extension-name')) || '',
+    source: (SCRIPT_ELEMENT && SCRIPT_ELEMENT.getAttribute('data-extension-source')) || '',
+    readyTypes: ((SCRIPT_ELEMENT && SCRIPT_ELEMENT.getAttribute('data-extension-ready-types')) || '')
+      .split(/[\s,]+/).filter(Boolean),
+    pingSource: (SCRIPT_ELEMENT && SCRIPT_ELEMENT.getAttribute('data-extension-ping-source')) || '',
+    pingType: (SCRIPT_ELEMENT && SCRIPT_ELEMENT.getAttribute('data-extension-ping-type')) || ''
+  };
   // An https page reaches 127.0.0.1 only after Chrome's loopback permission is granted, and Chrome
   // asks by holding the request open until the user answers its popup. A short timeout aborts that
   // request while the popup is still on screen and reports a missing install, so the probe waits
@@ -574,6 +583,297 @@
     });
   }
 
+  // ------------------------------------------------ connection readiness UI
+  // One compact control belongs to the shared header; details live in the shared
+  // dialog shell so adding a connection never creates another toolbar. Dicut uses
+  // probe() above, while extension consumers opt into the ready message they
+  // already use for real work through data-* on this script element.
+  var connectionNodes = null;
+  var connectionExtensionTimer = null;
+  var connectionReturnFocus = null;
+  var connectionState = {
+    dicut: { state: 'checking', title: 'Dicut PS', detail: 'กำลังตรวจ Bridge และ Photoshop…', raw: null },
+    extension: EXTENSION_CONFIG.name
+      ? { state: 'checking', title: EXTENSION_CONFIG.name, detail: 'กำลังตรวจ Extension…', raw: null }
+      : null
+  };
+
+  function connectionFocusable() {
+    if (!connectionNodes) return [];
+    return Array.prototype.slice.call(connectionNodes.backdrop.querySelectorAll(
+      'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+    )).filter(function (node) { return !node.hidden; });
+  }
+
+  function closeConnectionDialog(returnFocus) {
+    if (!connectionNodes || connectionNodes.backdrop.hidden) return;
+    connectionNodes.backdrop.classList.remove('open');
+    connectionNodes.backdrop.hidden = true;
+    connectionNodes.trigger.setAttribute('aria-expanded', 'false');
+    if (returnFocus !== false && connectionReturnFocus && document.contains(connectionReturnFocus)) {
+      connectionReturnFocus.focus();
+    }
+    connectionReturnFocus = null;
+  }
+
+  function openConnectionDialog() {
+    if (!connectionNodes) return;
+    connectionReturnFocus = document.activeElement;
+    connectionNodes.backdrop.hidden = false;
+    connectionNodes.backdrop.classList.add('open');
+    connectionNodes.trigger.setAttribute('aria-expanded', 'true');
+    connectionNodes.close.focus();
+  }
+
+  function renderConnectionRow(kind, value) {
+    if (!connectionNodes || !value) return;
+    var row = connectionNodes.rows[kind];
+    row.root.dataset.state = value.state;
+    row.title.textContent = value.title + (value.state === 'ready' ? ' พร้อม' : value.state === 'checking' ? ' · กำลังตรวจ' : ' ยังไม่พร้อม');
+    row.detail.textContent = value.detail;
+    row.help.hidden = kind !== 'dicut' || value.state !== 'action';
+  }
+
+  function renderConnectionStatus() {
+    if (!connectionNodes) return;
+    var values = [connectionState.dicut];
+    if (connectionState.extension) values.push(connectionState.extension);
+    var checking = values.filter(function (value) { return value.state === 'checking'; });
+    var action = values.filter(function (value) { return value.state === 'action'; });
+    var label;
+    var state;
+    if (checking.length) {
+      label = 'กำลังตรวจการเชื่อมต่อ…';
+      state = 'checking';
+    } else if (!action.length) {
+      label = connectionState.extension ? 'ระบบเชื่อมต่อพร้อม' : 'Dicut PS พร้อม';
+      state = 'ready';
+    } else if (action.length === 1) {
+      label = (action[0] === connectionState.dicut ? 'Dicut PS' : 'Extension') + ' ยังไม่พร้อม';
+      state = 'action';
+    } else {
+      label = 'ยังไม่พร้อม ' + action.length + ' จุด';
+      state = 'action';
+    }
+    connectionNodes.trigger.dataset.state = state;
+    connectionNodes.label.textContent = label;
+    connectionNodes.trigger.title = label + ' · กดเพื่อดูรายละเอียด';
+    renderConnectionRow('dicut', connectionState.dicut);
+    renderConnectionRow('extension', connectionState.extension);
+  }
+
+  function checkDicutConnection(force) {
+    connectionState.dicut.state = 'checking';
+    connectionState.dicut.detail = 'กำลังตรวจ Bridge และ Photoshop…';
+    renderConnectionStatus();
+    return probe({ force: !!force }).then(function (state) {
+      connectionState.dicut.raw = state;
+      if (state.available && state.photoshopFound && !state.stale) {
+        connectionState.dicut.state = 'ready';
+        connectionState.dicut.detail = 'Bridge ' + (state.version || 'ไม่ทราบรุ่น') + ' · ' +
+          (state.photoshop || 'Adobe Photoshop') + (state.busy ? ' · กำลังใช้งาน' : '');
+      } else {
+        connectionState.dicut.state = 'action';
+        connectionState.dicut.detail = state.error || 'ยังเชื่อมต่อ Dicut PS ไม่ได้';
+      }
+      renderConnectionStatus();
+      return state;
+    });
+  }
+
+  function markExtensionWaiting() {
+    if (!connectionState.extension) return;
+    connectionState.extension.state = 'checking';
+    connectionState.extension.detail = 'กำลังรอสัญญาณ ready จาก Extension…';
+    renderConnectionStatus();
+    if (EXTENSION_CONFIG.pingSource && EXTENSION_CONFIG.pingType) {
+      window.postMessage({ source: EXTENSION_CONFIG.pingSource, type: EXTENSION_CONFIG.pingType }, '*');
+    }
+    clearTimeout(connectionExtensionTimer);
+    connectionExtensionTimer = setTimeout(function () {
+      if (!connectionState.extension || connectionState.extension.state !== 'checking') return;
+      connectionState.extension.state = 'action';
+      connectionState.extension.detail = 'ยังไม่พบ Extension · ถ้าติดตั้งหรือ Reload แล้ว ให้รีเฟรชหน้านี้หนึ่งครั้ง';
+      renderConnectionStatus();
+    }, 3000);
+  }
+
+  function refreshConnectionStatus() {
+    checkDicutConnection(true);
+    if (!connectionState.extension) return;
+    // An extension with no existing ping cannot be re-probed without inventing a
+    // second protocol. Keep a truthful ready result; a missing result names the
+    // required page refresh in its recovery text.
+    if (!EXTENSION_CONFIG.pingSource || !EXTENSION_CONFIG.pingType) {
+      if (connectionState.extension.state !== 'ready') markExtensionWaiting();
+      return;
+    }
+    markExtensionWaiting();
+  }
+
+  function createConnectionRow(kind, title) {
+    var root = document.createElement('div');
+    root.className = 'cct-connection-row';
+    root.dataset.state = 'checking';
+    var dot = document.createElement('span');
+    dot.className = 'cct-connection-row-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    var copy = document.createElement('div');
+    var strong = document.createElement('strong');
+    strong.textContent = title + ' · กำลังตรวจ';
+    var detail = document.createElement('p');
+    detail.textContent = 'กำลังตรวจ…';
+    copy.appendChild(strong);
+    copy.appendChild(detail);
+    var help = document.createElement('button');
+    help.type = 'button';
+    help.className = 'btn small cct-connection-help';
+    help.textContent = 'วิธีแก้';
+    help.hidden = true;
+    if (kind === 'dicut') {
+      help.addEventListener('click', function () {
+        var state = connectionState.dicut.raw || {};
+        closeConnectionDialog(false);
+        showHelp(connectionState.dicut.detail, connectionNodes.trigger, !!state.stale);
+      });
+    }
+    root.appendChild(dot);
+    root.appendChild(copy);
+    root.appendChild(help);
+    return { root: root, title: strong, detail: detail, help: help };
+  }
+
+  function createConnectionDialog(trigger) {
+    var backdrop = document.createElement('div');
+    backdrop.id = 'cct-connection-dialog';
+    backdrop.className = 'dialog-backdrop cct-connection-backdrop';
+    backdrop.setAttribute('role', 'dialog');
+    backdrop.setAttribute('aria-modal', 'true');
+    backdrop.setAttribute('aria-labelledby', 'cct-connection-title');
+    backdrop.hidden = true;
+    var dialog = document.createElement('section');
+    dialog.className = 'dialog cct-connection-dialog';
+    var head = document.createElement('div');
+    head.className = 'cct-connection-head';
+    var title = document.createElement('strong');
+    title.id = 'cct-connection-title';
+    title.className = 'dialog-title';
+    title.textContent = 'สถานะการเชื่อมต่อ';
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'btn cct-connection-close';
+    close.setAttribute('aria-label', 'ปิดสถานะการเชื่อมต่อ');
+    close.textContent = '×';
+    head.appendChild(title);
+    head.appendChild(close);
+    var intro = document.createElement('p');
+    intro.className = 'dialog-body cct-connection-intro';
+    intro.textContent = 'ตรวจจากบริการบนเครื่องและ Extension ที่หน้านี้ใช้งานจริง';
+    var rows = document.createElement('div');
+    rows.className = 'cct-connection-rows';
+    var dicutRow = createConnectionRow('dicut', 'Dicut PS');
+    rows.appendChild(dicutRow.root);
+    var extensionRow = null;
+    if (connectionState.extension) {
+      extensionRow = createConnectionRow('extension', connectionState.extension.title);
+      rows.appendChild(extensionRow.root);
+    }
+    var actions = document.createElement('div');
+    actions.className = 'dialog-actions cct-connection-actions';
+    var refresh = document.createElement('button');
+    refresh.type = 'button';
+    refresh.className = 'btn';
+    refresh.textContent = 'ตรวจใหม่';
+    actions.appendChild(refresh);
+    dialog.appendChild(head);
+    dialog.appendChild(intro);
+    dialog.appendChild(rows);
+    dialog.appendChild(actions);
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+    connectionNodes = {
+      trigger: trigger,
+      label: trigger.querySelector('.cct-connection-label'),
+      backdrop: backdrop,
+      close: close,
+      refresh: refresh,
+      rows: { dicut: dicutRow, extension: extensionRow }
+    };
+    close.addEventListener('click', function () { closeConnectionDialog(true); });
+    refresh.addEventListener('click', refreshConnectionStatus);
+    backdrop.addEventListener('click', function (event) {
+      if (event.target === backdrop) closeConnectionDialog(true);
+    });
+    backdrop.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeConnectionDialog(true);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      var focusable = connectionFocusable();
+      if (!focusable.length) return;
+      var first = focusable[0];
+      var last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+  }
+
+  function mountConnectionStatus() {
+    if (connectionNodes || !document.body) return !!connectionNodes;
+    var nav = document.querySelector('[aria-label="Central Creative Tools"]');
+    if (!nav) return false;
+    var trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'cct-connection-trigger';
+    trigger.dataset.state = 'checking';
+    trigger.setAttribute('aria-haspopup', 'dialog');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.setAttribute('aria-controls', 'cct-connection-dialog');
+    var dot = document.createElement('span');
+    dot.className = 'cct-connection-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    var label = document.createElement('span');
+    label.className = 'cct-connection-label';
+    label.setAttribute('aria-live', 'polite');
+    label.textContent = 'กำลังตรวจการเชื่อมต่อ…';
+    trigger.appendChild(dot);
+    trigger.appendChild(label);
+    var theme = nav.querySelector('.theme-button,.theme-btn');
+    if (theme && theme.parentNode === nav) nav.insertBefore(trigger, theme.nextSibling);
+    else nav.appendChild(trigger);
+    createConnectionDialog(trigger);
+    trigger.addEventListener('click', function () {
+      if (connectionNodes.backdrop.hidden) openConnectionDialog();
+      else closeConnectionDialog(true);
+    });
+    renderConnectionStatus();
+    checkDicutConnection(true);
+    if (connectionState.extension) markExtensionWaiting();
+    return true;
+  }
+
+  function onExtensionReady(event) {
+    if (!connectionState.extension || event.source !== window || !event.data) return;
+    if (event.data.source !== EXTENSION_CONFIG.source) return;
+    if (EXTENSION_CONFIG.readyTypes.indexOf(event.data.type) < 0) return;
+    clearTimeout(connectionExtensionTimer);
+    connectionState.extension.state = 'ready';
+    connectionState.extension.raw = event.data;
+    connectionState.extension.detail = event.data.version
+      ? 'Extension ' + event.data.version + ' พร้อมใช้งาน'
+      : 'Extension พร้อมใช้งาน';
+    renderConnectionStatus();
+  }
+
+  if (connectionState.extension) window.addEventListener('message', onExtensionReady);
+
   window.DicutPS = {
     VERSION: VERSION,
     ENDPOINT: ENDPOINT,
@@ -583,12 +883,18 @@
     ensureReady: ensureReady,
     showHelp: showHelp,
     closeHelp: closeHelp,
+    mountConnectionStatus: mountConnectionStatus,
+    refreshConnectionStatus: refreshConnectionStatus,
     downloadInstaller: downloadInstaller,
     toDataUrl: toDataUrl,
     dataUrlToBlob: dataUrlToBlob
   };
 
-  // Load the stylesheet up front so the dialog is never painted unstyled.
+  // Load the stylesheet up front so the install and readiness dialogs never
+  // paint unstyled, then mount into the shared header already present on-page.
   if (document.head) injectHelpStyles();
   else document.addEventListener('DOMContentLoaded', injectHelpStyles, { once: true });
+  if (!mountConnectionStatus()) {
+    document.addEventListener('DOMContentLoaded', mountConnectionStatus, { once: true });
+  }
 })();

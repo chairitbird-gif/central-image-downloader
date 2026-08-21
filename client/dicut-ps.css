@@ -2,6 +2,38 @@
  * Content-Security-Policy with style-src 'self' and no 'unsafe-inline'.
  * Canonical source: dicut-bridge/client/dicut-ps.css
  */
+
+/* Shared Header connection summary. Its fixed slot keeps navigation geometry
+ * stable even when one tool has an Extension and another only has Dicut PS. */
+.cct-connection-trigger {align-self:center;flex:0 0 158px;width:158px;min-width:158px;min-height:36px;display:inline-flex;align-items:center;justify-content:flex-start;gap:7px;padding:5px 10px;border:1px solid #5b5e66;border-radius:999px;background:#292b2e;color:#e4e6e9;font:600 12px/1.2 system-ui,-apple-system,"Segoe UI","Noto Sans Thai",sans-serif;white-space:nowrap;transition:transform 120ms cubic-bezier(.2,.7,.3,1),background-color 120ms,border-color 120ms,color 120ms}
+.cct-connection-trigger:hover {background:#33353a}
+.cct-connection-trigger:active {transform:scale(.97)}
+.cct-connection-dot,.cct-connection-row-dot {flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:#90949c;box-shadow:0 0 0 3px rgba(144,148,156,.16)}
+.cct-connection-label {min-width:0;overflow:hidden;text-overflow:ellipsis}
+.cct-connection-trigger[data-state="ready"] {border-color:#4c8b5c;background:#153b22;color:#bff0ca}
+.cct-connection-trigger[data-state="ready"]:hover {background:#1a4829}
+.cct-connection-trigger[data-state="ready"] .cct-connection-dot,.cct-connection-row[data-state="ready"] .cct-connection-row-dot {background:#63bd5b;box-shadow:0 0 0 3px rgba(99,189,91,.18)}
+.cct-connection-trigger[data-state="action"] {border-color:#aa8130;background:#4a3812;color:#ffe4a8}
+.cct-connection-trigger[data-state="action"]:hover {background:#594516}
+.cct-connection-trigger[data-state="action"] .cct-connection-dot,.cct-connection-row[data-state="action"] .cct-connection-row-dot {background:#e2a93b;box-shadow:0 0 0 3px rgba(226,169,59,.18)}
+
+.cct-connection-backdrop[hidden] {display:none!important}
+.cct-connection-dialog {width:min(560px,100%)}
+.cct-connection-head {display:flex;align-items:center;justify-content:space-between;gap:16px}
+.cct-connection-close {flex:0 0 36px;width:36px;padding:0;font-size:20px;line-height:1}
+.cct-connection-intro {margin-bottom:14px;color:var(--muted,#696970)}
+.cct-connection-rows {display:grid;gap:9px}
+.cct-connection-row {display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:start;gap:10px;padding:12px;border:1px solid var(--line,#dedee3);border-radius:10px;background:var(--panel-raised,#fff)}
+.cct-connection-row-dot {margin-top:5px}
+.cct-connection-row strong {display:block;color:var(--ink,#171719);font-size:13px}
+.cct-connection-row p {margin:3px 0 0;color:var(--muted,#696970);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.cct-connection-help {align-self:center;white-space:nowrap}
+.cct-connection-help[hidden] {display:none!important}
+.cct-connection-actions {margin-top:14px}
+
+@media(max-width:760px) {.cct-connection-trigger {width:134px;min-width:134px;min-height:40px;padding-inline:9px;font-size:11px}.cct-connection-dialog .btn {min-height:44px}}
+@media(max-width:520px) {.cct-connection-row {grid-template-columns:10px minmax(0,1fr)}.cct-connection-help {grid-column:2;justify-self:start}.cct-connection-actions .btn {width:100%}}
+
 .dicut-ps-backdrop {position:fixed;inset:0;background:rgba(8,10,14,.62);display:flex;align-items:center;justify-content:center;padding:16px;z-index:1000;overflow:auto}
 .dicut-ps-backdrop[hidden] {display:none}
 .dicut-ps-dialog {background:#fff;color:#1b1f27;border-radius:12px;max-width:560px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:20px;box-shadow:0 18px 48px rgba(0,0,0,.35);font:13px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;animation:dicutPsIn 200ms cubic-bezier(.2,.7,.3,1) both}
@@ -31,6 +63,7 @@ to {opacity:1;transform:none}
 .dicut-ps-tab[aria-selected="true"],.dicut-ps-actions .dicut-ps-primary,.dicut-ps-step-btn.is-main {background:#e8ebf0;border-color:#e8ebf0;color:#191c22}
 }
 @media (prefers-reduced-motion:reduce) {.dicut-ps-dialog {animation:none}
+.cct-connection-trigger {transition:none}
 }
 
 /* Three of the four tools drive their theme with a data-theme attribute rather
